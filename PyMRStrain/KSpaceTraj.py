@@ -185,11 +185,11 @@ class Trajectory:
       self.gamma_ = 2*np.pi*1e+6*gammabar     # [rad/T]
       self.lines_per_shot = lines_per_shot
       self.pxsz = FOV/res
-      self.kspace_bw = 1.0/self.pxsz
-      if res[2] == 1:
-        self.kspace_spa = self.kspace_bw/np.array([self.oversampling*self.res[0]-1, self.res[1]-1, self.res[2]])
-      else:
-        self.kspace_spa = self.kspace_bw/np.array([self.oversampling*self.res[0]-1, self.res[1]-1, self.res[2]-1])        
+      self.k_spa = 1.0/np.array([oversampling*FOV[0], FOV[1], FOV[2]])
+      self.k_bw  = 1.0/self.pxsz
+      self.kx_max = self.k_spa[0]*np.floor([-0.5*(oversampling*res[0]-1), 0.5*(oversampling*res[0]-1)]) + res[0] % oversampling
+      self.ky_max = self.k_spa[1]*np.floor([-0.5*(res[1]-1), 0.5*(res[1]-1)])
+      self.kz_max = self.k_spa[2]*np.floor([-0.5*(res[2]-1), 0.5*(res[2]-1)])
       self.ro_samples = oversampling*res[0] # number of readout samples
       self.slices = res[2]                  # number of slices
       self.VENC = VENC  # [m/s]
@@ -224,26 +224,26 @@ class Cartesian(Trajectory):
 
       # k-space positioning gradients
       ph_grad = Gradient(t_ref=bipolar.timings[-1], Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
-      ph_grad.calculate(0.5*self.kspace_bw[1])
+      ph_grad.calculate(0.5*self.k_bw[1])
 
       ro_grad0 = Gradient(t_ref=bipolar.timings[-1], Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
-      ro_grad0.calculate(-0.5*self.kspace_bw[0] - 0.5*ro_grad0.gammabar_*ro_grad0.G_*ro_grad0.slope_)
+      ro_grad0.calculate(-0.5*self.k_bw[0] - 0.5*ro_grad0.gammabar_*ro_grad0.G_*ro_grad0.slope_)
 
       blip_grad = Gradient(t_ref=0.0, Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
-      blip_grad.calculate(-self.kspace_bw[1]/self.ph_samples)
+      blip_grad.calculate(-self.k_bw[1]/self.ph_samples)
 
       ro_gradients = [bipolar, ro_grad0, ]
       ph_gradients = [ph_grad, ]
       for i in range(self.lines_per_shot):
         # Calculate readout gradient
         ro_grad = Gradient(t_ref=ro_gradients[i+1].timings[-1], Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
-        ro_grad.calculate((-1)**i*self.kspace_bw[0], receiver_bw=self.receiver_bw, ro_samples=self.ro_samples, ofac=self.oversampling)
+        ro_grad.calculate((-1)**i*self.k_bw[0], receiver_bw=self.receiver_bw, ro_samples=self.ro_samples, ofac=self.oversampling)
         ro_gradients.append(ro_grad)
 
         # Calculate blip gradient
         ref = ro_gradients[-1].t_ref + ro_gradients[-1].dur - 0.5*blip_grad.dur
         blip_grad = Gradient(t_ref=ref, Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
-        blip_grad.calculate(-self.kspace_bw[1]/self.ph_samples)
+        blip_grad.calculate(-self.k_bw[1]/self.ph_samples)
         ph_gradients.append(blip_grad)
 
       if self.plot_seq:
@@ -283,27 +283,13 @@ class Cartesian(Trajectory):
         venc_time = bipolar.dur_
 
       # kspace locations
-      kx = np.linspace(-0.5*self.kspace_bw[0], 0.5*self.kspace_bw[0], self.ro_samples)
-      ky = -0.5*self.kspace_bw[1]*np.ones(kx.shape)
-      kz = np.linspace(-0.5*self.kspace_bw[2], 0.5*self.kspace_bw[2], self.slices)
+      kx = np.linspace(self.kx_max[0], self.kx_max[1], self.ro_samples)
+      ky = self.ky_max[0]*np.ones(kx.shape)
+      kz = np.linspace(self.kz_max[0], self.kz_max[1], self.slices)
       kspace = (np.zeros([self.ro_samples, self.ph_samples, self.slices],     
                 dtype=np.float32),
                 np.zeros([self.ro_samples, self.ph_samples, self.slices],dtype=np.float32),
                 np.zeros([self.ro_samples, self.ph_samples, self.slices],dtype=np.float32))
-
-      # Fix kx kspace shift
-      if (self.ro_samples/self.oversampling) % 2 == 0 :
-        kx = kx - 0.5*self.kspace_spa[0]
-      else:
-        kx = kx + 0.5*self.kspace_spa[0]
-      # Fix ky kspace shift
-      if self.ph_samples % 2 == 0:
-        ky = ky - 0.5*self.kspace_spa[1]
-      # Fix kz kspace shift
-      if (self.slices % 2 == 0):
-        kz = kz - 0.5*self.kspace_spa[2]
-      if (self.slices == 1):
-        kz = kz + 0.5*self.kspace_spa[2]
 
       # kspace times and locations
       t = np.zeros([self.ro_samples, self.ph_samples], dtype=np.float32)
@@ -315,7 +301,7 @@ class Cartesian(Trajectory):
 
         # Fill locations
         kspace[0][::ro,ph,:] = np.tile(kx[:,np.newaxis], [1, self.slices])
-        kspace[1][::ro,ph,:] = np.tile(ky[:,np.newaxis] + self.kspace_spa[1]*ph, [1, self.slices])
+        kspace[1][::ro,ph,:] = np.tile(ky[:,np.newaxis] + self.k_spa[1]*ph, [1, self.slices])
 
         # Update timings
         if ph % self.lines_per_shot == 0:
@@ -374,11 +360,11 @@ class Radial(Trajectory):
     def kspace_points(self):
       ''' Get kspace points '''
       # Time needed to acquire one line
-      dt_line = (self.kspace_bw[0]*2*np.pi)/(self.gamma_*self.Gr_max_)
+      dt_line = (self.k_bw[0]*2*np.pi)/(self.gamma_*self.Gr_max_)
       dt = np.linspace(0.0, dt_line, self.ro_samples)
 
       # kspace locations
-      kx = np.linspace(-0.5*self.kspace_bw[0], 0.5*self.kspace_bw[0], self.ro_samples)
+      kx = np.linspace(-0.5*self.k_bw[0], 0.5*self.k_bw[0], self.ro_samples)
       ky = np.zeros(kx.shape)
       kspace = (np.zeros([self.ro_samples, self.spokes]),
                 np.zeros([self.ro_samples, self.spokes]))
@@ -445,8 +431,8 @@ class Spiral(Trajectory):
       r = self.pxsz[0]
 
       # Radial distance definition
-      kr0 = k0*0.5*self.kspace_bw[0]
-      kr1 = k1*0.5*self.kspace_bw[0]
+      kr0 = k0*0.5*self.k_bw[0]
+      kr1 = k1*0.5*self.k_bw[0]
       kr = np.linspace(0, 1, self.ro_samples)
       kr = kr1*(kr**1)
       phi = 2*np.pi*f*kr/N
