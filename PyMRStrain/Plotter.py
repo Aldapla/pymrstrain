@@ -9,19 +9,24 @@ def remove_keymap_conflicts(new_keys_set):
             for key in remove_list:
                 keys.remove(key)
 
-def multi_slice_viewer(volumes,caxis=None):
+def multi_slice_viewer(volumes, caxis=None):
     remove_keymap_conflicts({'j', 'k'})
     volumes = [np.transpose(volume, (1,0,2)) for volume in volumes]
     fig, ax = plt.subplots(1, len(volumes))
     if len(volumes) == 1:
       ax = [ax,None]
+    
+    # Plot volumes
     for (i, volume) in enumerate(volumes):
       ax[i].volume = volume
       ax[i].index = 0
       if caxis==None:
         ax[i].imshow(volume[...,ax[i].index], cmap=plt.get_cmap('Greys_r'), vmin=volume.min(), vmax=volume.max())
       else:
-        ax[i].imshow(volume[...,ax[i].index], cmap=plt.get_cmap('Greys_r'), vmin=caxis[0], vmax=caxis[1])
+        if isinstance(caxis[0], list):
+          ax[i].imshow(volume[...,ax[i].index], cmap=plt.get_cmap('Greys_r'), vmin=caxis[i][0], vmax=caxis[i][1])
+        else:
+          ax[i].imshow(volume[...,ax[i].index], cmap=plt.get_cmap('Greys_r'), vmin=caxis[0], vmax=caxis[1])          
       ax[i].invert_yaxis()
       ax[i].set_title('Slice {:d}'.format(ax[i].index))
 
