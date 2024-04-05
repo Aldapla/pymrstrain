@@ -187,7 +187,7 @@ class Trajectory:
       self.pxsz = FOV/res
       self.k_spa = 1.0/np.array([oversampling*FOV[0], FOV[1], FOV[2]])
       self.k_bw  = 1.0/self.pxsz
-      self.kx_max = self.k_spa[0]*np.floor([-0.5*(oversampling*res[0]-1), 0.5*(oversampling*res[0]-1)]) + res[0] % oversampling
+      self.kx_max = self.k_spa[0]*(np.floor([-0.5*(oversampling*res[0]-1), 0.5*(oversampling*res[0]-1)]) + res[0] % oversampling)
       self.ky_max = self.k_spa[1]*np.floor([-0.5*(res[1]-1), 0.5*(res[1]-1)])
       self.kz_max = self.k_spa[2]*np.floor([-0.5*(res[2]-1), 0.5*(res[2]-1)])
       self.ro_samples = oversampling*res[0] # number of readout samples
@@ -286,6 +286,7 @@ class Cartesian(Trajectory):
       kx = np.linspace(self.kx_max[0], self.kx_max[1], self.ro_samples)
       ky = self.ky_max[0]*np.ones(kx.shape)
       kz = np.linspace(self.kz_max[0], self.kz_max[1], self.slices)
+
       kspace = (np.zeros([self.ro_samples, self.ph_samples, self.slices],     
                 dtype=np.float32),
                 np.zeros([self.ro_samples, self.ph_samples, self.slices],dtype=np.float32),
