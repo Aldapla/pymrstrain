@@ -231,6 +231,8 @@ class XDMFFile:
       print("Writing XDMF file...")
 
       # Make sure containing folder exists
+      print(self.filename.as_posix())
+      print(self.filename.parent.as_posix())
       self.filename.parent.mkdir(parents=True, exist_ok=True)
 
       # Create writer
