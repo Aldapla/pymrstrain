@@ -1,6 +1,5 @@
 import os
 import pickle
-from csv import writer as csvwriter
 from pathlib import Path
 from subprocess import run
 
@@ -153,7 +152,7 @@ def rescale_image(I):
 # File class to write individual or cine VTI files
 class VTIFile:
   def __init__(self, filename='image.pvd', origin=np.zeros([3,]), spacing=np.ones([3,]), direction=np.eye(3).flatten(), nbFrames=1, dt=1):
-    self.filename = Path(filename)
+    self.filename = Path(filename) if '.pvd' in filename else Path(filename+'.pvd')
     self.origin = origin
     self.spacing = spacing
     self.direction = direction
@@ -166,7 +165,7 @@ class VTIFile:
     self.filename.parent.mkdir(parents=True, exist_ok=True)
 
     # Create pvd object to group all files
-    pvd = VtkGroup(self.filename.parent.as_posix()+'/'+self.filename.stem)
+    pvd = VtkGroup(str(self.filename.parent/self.filename.stem))
 
     # Check if nbFrames match the last dimension of each cellData
     if self.nbFrames > 1:
@@ -185,8 +184,7 @@ class VTIFile:
         cdfr = dict(zip(keys, data))
 
         # Frame path
-        frame_path = self.filename.parent.as_posix() + '/' \
-                   + self.filename.stem + '_{:04d}'.format(fr)
+        frame_path = str(self.filename.parent / (self.filename.stem + '_{:04d}'.format(fr)))
 
         # Write VTI
         imageToVTK(frame_path, cellData=cdfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
@@ -205,13 +203,13 @@ class VTIFile:
 
       # Write data
       pvd = VtkGroup(self.filename.as_posix())
-      frame_path = self.filename.parent.as_posix()+'/'+self.filename.stem
+      frame_path = str(self.filename.parent/self.filename.stem )
       imageToVTK(frame_path, cellData=cdfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
       pvd.addFile(filepath=frame_path+'.vti', sim_time=0)
       pvd.save()
 
   def make_contiguous(self, A):
-    if not A.is_contiguous:
+    if not A.data.contiguous:
       return np.ascontiguousarray(A)
     else:
       return A
@@ -234,7 +232,7 @@ class XDMFFile:
       self.filename.parent.mkdir(parents=True, exist_ok=True)
 
       # Create writer
-      self.writer = meshio.xdmf.TimeSeriesWriter(self.filename.as_posix())
+      self.writer = meshio.xdmf.TimeSeriesWriter(str(self.filename))
       self.writer.__enter__()
 
       # Store mesh
@@ -250,7 +248,7 @@ class XDMFFile:
     self.writer.__exit__()
 
     # Move generated HDF5 file to the right folder
-    run(['mv',self.filename.stem+'.h5',self.filename.parent.as_posix()+'/'])
+    run(['mv',self.filename.stem+'.h5',str(self.filename.parent)+'/'])
 
 
 # File class to write individual or cine TXT files
@@ -267,10 +265,7 @@ class TXTFile:
       self.filename.parent.mkdir(parents=True, exist_ok=True)
       self.__firstwrite__ = False
 
-    destination = self.filename.parent.as_posix() + '/' \
-                + self.filename.stem \
-                + '_{:04d}'.format(idx) \
-                + self.filename.suffix
+    destination = str(self.filename.parent/(self.filename.stem+'_{:04d}'.format(idx)+self.filename.suffix))
     with open(destination, "w") as f:
       # Write time
       f.write("{:s}\n".format("Time"))
@@ -288,7 +283,7 @@ class TXTFile:
           elif isinstance(self.metadata[key],  str):
             f.write("{:s}\n".format(self.metadata[key]))
           elif isinstance(self.metadata[key], np.ndarray):
-            csvwriter(f, delimiter=" ").writerow(self.metadata[key].flatten())
+            np.savetxt(f, self.metadata[key])   
 
     # Write data
     data = self.nodes
