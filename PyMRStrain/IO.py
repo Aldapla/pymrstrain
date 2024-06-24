@@ -159,7 +159,7 @@ class VTIFile:
     self.nbFrames = nbFrames
     self.dt = dt
 
-  def write(self, cellData):
+  def write(self, cellData=None, pointData=None):
 
     # Make sure the containing folder exists
     self.filename.parent.mkdir(parents=True, exist_ok=True)
@@ -169,9 +169,6 @@ class VTIFile:
 
     # Check if nbFrames match the last dimension of each cellData
     if self.nbFrames > 1:
-      check_dims = [self.nbFrames!=cellData[key].shape[-1] for key in cellData.keys()]
-      if np.any(check_dims):
-        raise Exception("[Dimension mismatch] PyMRStrain: nbFrames does not match the last dimensions of cellData elements")
 
       # Write cine images
       print("Writing vti files...")
@@ -179,15 +176,23 @@ class VTIFile:
         print("    Writing fame {:d}".format(fr))
 
         # cellData at frame fr
-        keys = cellData.keys()
-        data = [self.make_contiguous(cellData[key][...,fr]) for key in keys]
-        cdfr = dict(zip(keys, data))
+        if cellData != None:
+          cell_data = [self.make_contiguous(cellData[key][...,fr]) for key in cellData.keys()]
+          cdfr = dict(zip(cellData.keys(), cell_data))
+        if pointData != None:
+          point_data = [self.make_contiguous(pointData[key][...,fr]) for key in pointData.keys()]    
+          ptfr =  dict(zip(pointData.keys(), point_data))   
 
         # Frame path
         frame_path = str(self.filename.parent / (self.filename.stem + '_{:04d}'.format(fr)))
 
         # Write VTI
-        imageToVTK(frame_path, cellData=cdfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
+        if cellData != None and pointData == None:
+          imageToVTK(frame_path, cellData=cdfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
+        elif cellData == None and pointData != None:
+          imageToVTK(frame_path, pointData=ptfr, origin=self.origin, spacing=self.spacing, direction=self.direction)        
+        else:
+          imageToVTK(frame_path, cellData=cdfr, pointData=ptfr, origin=self.origin, spacing=self.spacing, direction=self.direction)        
 
         # Add VTI files to pvd group
         pvd.addFile(filepath=frame_path+'.vti', sim_time=fr*self.dt)
@@ -197,14 +202,22 @@ class VTIFile:
 
     else:
       # Make sure data is ordered as contiguous arrays
-      keys = cellData.keys()
-      data = [self.make_contiguous(cellData[key]) for key in keys]
-      cdfr = dict(zip(keys, data))
+      if cellData != None:
+        cell_data = [self.make_contiguous(cellData[key]) for key in cellData.keys()]
+        cdfr = dict(zip(cellData.keys(), data))
+      if pointData != None:
+        point_data = [self.make_contiguous(cellData[key]) for key in pointData.keys()]
+        ptfr = dict(zip(pointData.keys(), data))
 
       # Write data
       pvd = VtkGroup(self.filename.as_posix())
-      frame_path = str(self.filename.parent/self.filename.stem )
-      imageToVTK(frame_path, cellData=cdfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
+      frame_path = str(self.filename.parent/self.filename.stem)
+      if cellData != None and pointData == None:
+        imageToVTK(frame_path, cellData=cdfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
+      elif cellData == None and pointData != None:
+        imageToVTK(frame_path, pointData=ptfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
+      else:
+        imageToVTK(frame_path, cellData=cdfr, pointData=ptfr, origin=self.origin, spacing=self.spacing, direction=self.direction)
       pvd.addFile(filepath=frame_path+'.vti', sim_time=0)
       pvd.save()
 
@@ -257,15 +270,16 @@ class TXTFile:
     self.filename = Path(filename) if '.txt' in filename else Path(filename+'.txt')
     self.nodes = nodes        # numpy ndarray
     self.metadata = metadata  # dictionary
+    self._idx = 0
     self.__firstwrite__ = True
 
-  def write(self, pointData=None, time=0.0, idx=0):
+  def write(self, pointData=None, time=0.0):
     # Make sure containing folder exists
     if self.__firstwrite__:
       self.filename.parent.mkdir(parents=True, exist_ok=True)
       self.__firstwrite__ = False
 
-    destination = str(self.filename.parent/(self.filename.stem+'_{:04d}'.format(idx)+self.filename.suffix))
+    destination = str(self.filename.parent/(self.filename.stem+'_{:04d}'.format(self._idx)+self.filename.suffix))
     with open(destination, "w") as f:
       # Write time
       f.write("{:s}\n".format("Time"))
@@ -291,3 +305,6 @@ class TXTFile:
       data = np.column_stack((data, d))
     with open(destination,'ab') as f:
       np.savetxt(f, data)   
+
+    # Update file counter
+    self._idx += 1
