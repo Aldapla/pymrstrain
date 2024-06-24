@@ -83,3 +83,8 @@ class EPI:
         #     t[:,i] += i*dt_esp + delta
 
         return t
+class SliceProfile:
+  def __init__(self, z=None, delta_z=None):
+    self.z = z
+    self.delta_z = delta_z
+    self.profile = (np.abs(z) <= delta_z).astype(np.float32)
