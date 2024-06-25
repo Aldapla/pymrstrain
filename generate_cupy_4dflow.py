@@ -143,16 +143,16 @@ if __name__ == '__main__':
 
     # Generate kspace trajectory
     lps = pars[seq]['LinesPerShot']
-    traj = Cartesian(FOV=FOV, res=RES, oversampling=OFAC, lines_per_shot=lps, VENC=VENC, MPS_ori=MPS_ori, LOC=LOC, receiver_bw=r_BW, Gr_max=G_max, Gr_sr=G_sr, plot_seq=False)
+    traj = Cartesian(FOV=FOV, res=RES, oversampling=OFAC, lines_per_shot=lps, VENC=VENC, MPS_ori=MPS_ori.get(), LOC=LOC.get(), receiver_bw=r_BW, Gr_max=G_max, Gr_sr=G_sr, plot_seq=False)
 
     # Convert trajectory numpy arrays to cupy arrays
-    traj.points = (cp.asarray(traj.points[0], dtype=cp.float32), 
-                  cp.asarray(traj.points[1], dtype=cp.float32), 
-                  cp.asarray(traj.points[2], dtype=cp.float32))
-    traj.times  = cp.asarray(traj.times, dtype=cp.float32)
+    cp_traj_points = (cp.asarray(traj.points[0], dtype=cp.float32), 
+                      cp.asarray(traj.points[1], dtype=cp.float32), 
+                      cp.asarray(traj.points[2], dtype=cp.float32))
+    cp_traj_times = cp.asarray(traj.times, dtype=cp.float32)
 
     # Translate phantom to obtain the desired slice location
-    cp_nodes = (cp_nodes - traj.LOC)@traj.MPS_ori
+    cp_nodes = (cp_nodes - LOC)@MPS_ori
 
     # Slice profile
     # gammabar = 1.0e+6*42.58 # Hz/T 
@@ -180,19 +180,19 @@ if __name__ == '__main__':
       # Read velocity data in frame fr
       phantom.read_data(fr)
       cp_velocity = cp.asarray(phantom.velocity, dtype=cp.float32)
-      velocity = cp_velocity@traj.MPS_ori
+      velocity = cp_velocity@MPS_ori
 
       # Generate 4D flow image
       print('Generating frame {:d}'.format(fr))
       t0 = time.time()
-      K[traj.local_idx,:,:,:,fr] = FlowImage3D(M, traj.points, traj.times, cp_velocity, cp_nodes, gamma_x_delta_B0, T2star, VENC, profile)
+      K[traj.local_idx,:,:,:,fr] = FlowImage3D(M, cp_traj_points, cp_traj_times, cp_velocity, cp_nodes, gamma_x_delta_B0, T2star, VENC, profile)
       t1 = time.time()
       times.append(t1-t0)
 
       # Save kspace for debugging purposes
       if preview:
         with open(str(export_path), 'wb') as f:
-          pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC)}, f)
+          pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC), 'traj': traj}, f)
 
       # Synchronize MPI processes
       print(np.array(times).mean())
@@ -203,6 +203,6 @@ if __name__ == '__main__':
     # Export generated data
     # K_scaled = scale_data(K, mag=False, real=True, imag=True, dtype=np.uint64)
     with open(str(export_path), 'wb') as f:
-      pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC)}, f)
+      pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC), 'traj': traj}, f)
 
   stream.synchronize()
