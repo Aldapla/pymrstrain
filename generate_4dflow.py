@@ -1,6 +1,7 @@
 import os
 import pickle
 import time
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import meshio
@@ -69,11 +70,10 @@ if __name__ == '__main__':
     gamma_x_delta_B0 = 2*np.pi*gammabar*delta_B0
 
     # Path to export the generated data
-    im_folder = 'MRImages/'
+    export_path = Path('MRImages/{:s}_V{:.0f}.pkl'.format(seq, 100.0*VENC))
 
     # Make sure the directory exist
-    if MPI_rank==0:
-      os.makedirs(im_folder, exist_ok=True)
+    os.makedirs(str(export_path.parent), exist_ok=True)
 
     # Generate kspace trajectory
     lps = pars[seq]['LinesPerShot']
@@ -120,8 +120,8 @@ if __name__ == '__main__':
       if preview:
         K_copy = np.copy(K)
         K_copy = gather_image(K_copy)
-        if MPI_rank==0:
-          np.save(export_path, K_copy)
+        with open(str(export_path), 'wb') as f:
+          pickle.dump({'kspace': K_copy, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
 
       # Synchronize MPI processes
       print(np.array(times).mean())
@@ -135,5 +135,5 @@ if __name__ == '__main__':
 
     # Export generated data
     if MPI_rank==0:
-      # K_scaled = scale_data(K, mag=False, real=True, imag=True, dtype=np.uint64)
-      np.save(export_path, K)
+      with open(str(export_path), 'wb') as f:
+        pickle.dump({'kspace': K, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
