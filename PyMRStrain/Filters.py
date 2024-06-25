@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import signal
+from scipy.signal.windows import tukey
 
 
 def Hamming_filter(size):
@@ -25,5 +25,5 @@ def Riesz_filter(size, width=0.6, lift=0.7):
 
 def Tukey_filter(size, width=0.6, lift=0.7):
     alpha = 1.0-width
-    H0 = signal.tukey(size, alpha=alpha)*(1.0-lift) + lift
+    H0 = tukey(size, alpha=alpha)*(1.0-lift) + lift
     return H0
