@@ -308,7 +308,7 @@ class Cartesian(Trajectory):
         if ph % self.lines_per_shot == 0:
           t[::ro,ph] = venc_time + ro_grad0.dur_ + ro_grad.slope_ + dt
         else:
-          t[::ro,ph] = t[::-ro,ph-1][-1] + ro_grad.slope_ + ro_grad.slope_ + dt
+          t[::ro,ph] = t[:,ph-1].max() + ro_grad.slope_ + ro_grad.slope_ + dt[::ro]
 
         # Reverse readout
         ro = -ro
@@ -331,8 +331,8 @@ class Cartesian(Trajectory):
       plt.figure(1)
       for i in range(int(self.points[0].shape[1]/self.lines_per_shot)):
         idx = [i*self.lines_per_shot, (i+1)*self.lines_per_shot]
-        kxx = np.concatenate((np.array([0]), self.points[0][:,idx[0]:idx[1]].flatten('F')))
-        kyy = np.concatenate((np.array([0]), self.points[1][:,idx[0]:idx[1]].flatten('F')))
+        kxx = np.concatenate((np.array([0]), self.points[0][:,idx[0]:idx[1],0].flatten('F')))
+        kyy = np.concatenate((np.array([0]), self.points[1][:,idx[0]:idx[1],0].flatten('F')))
         # kxx = self.points[0][:,idx[0]:idx[1]].flatten('F')
         # kyy = self.points[1][:,idx[0]:idx[1]].flatten('F')
         plt.plot(kxx,kyy)
@@ -341,7 +341,7 @@ class Cartesian(Trajectory):
       plt.axis('equal')
 
       plt.figure(2)
-      im = plt.scatter(self.points[0],self.points[1],c=1000*self.times,s=1.5)
+      im = plt.scatter(self.points[0][:,:,0],self.points[1][:,:,0],c=1000*self.times,s=2.5,cmap='Greys')
       plt.xlabel('$k_x ~(1/m)$')
       plt.ylabel('$k_y ~(1/m)$')
       cbar = plt.colorbar(im, ax=plt.gca())
