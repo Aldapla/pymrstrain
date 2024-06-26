@@ -19,28 +19,7 @@ if __name__ == '__main__':
 
   # Extract information from data
   K = data['kspace']
-  MPS_ori = data['MPS_ori']
-  LOC = data['LOC']
   traj = data['traj']
-  RES = traj.res
-  print(traj.points[0].min(), traj.points[0].max(), (1.0/(traj.points[0].max()-traj.points[0].min())))
-  print(traj.points[1].min(), traj.points[1].max(), (1.0/(traj.points[1].max()-traj.points[1].min())))
-  print(traj.points[2].min(), traj.points[2].max(), (1.0/(traj.points[2].max()-traj.points[2].min())))
-
-  # # Zero padding in the dimensions with even measurements to avoid shifts in 
-  # # the image domain
-  # if RES[0] % 2 == 0:
-  #   pad_width = ((0, 1), (0, 0), (0, 0), (0, 0), (0, 0))
-  #   K = np.pad(K, pad_width, mode='constant')
-  #   RES[0] += 1
-  # if RES[1] % 2 == 0:
-  #   pad_width = ((0, 0), (0, 1), (0, 0), (0, 0), (0, 0))
-  #   K = np.pad(K, pad_width, mode='constant')
-  #   RES[1] += 1
-  # if RES[2] % 2 == 0:
-  #   pad_width = ((0, 0), (0, 0), (0, 1), (0, 0), (0, 0))
-  #   K = np.pad(K, pad_width, mode='constant')
-  #   RES[2] += 1
 
   # Fix the direction of kspace lines measured in the opposite direction
   if isinstance(traj, Cartesian) and traj.lines_per_shot > 1:   
