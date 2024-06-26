@@ -120,8 +120,9 @@ if __name__ == '__main__':
       if preview:
         K_copy = np.copy(K)
         K_copy = gather_image(K_copy)
-        with open(str(export_path), 'wb') as f:
-          pickle.dump({'kspace': K_copy, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
+        if MPI_rank==0:
+          with open(str(export_path), 'wb') as f:
+            pickle.dump({'kspace': K_copy, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
 
       # Synchronize MPI processes
       print(np.array(times).mean())
