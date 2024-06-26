@@ -174,7 +174,7 @@ class Gradient:
 class Trajectory:
   def __init__(self, FOV=np.array([0.3, 0.3, 0.08]), res=np.array([100, 100, 1]), oversampling=2, Gr_max=30, Gr_sr=195, lines_per_shot=7, gammabar=42.58, VENC=None, receiver_bw=128.0e+3, plot_seq=False, MPS_ori=np.eye(3), LOC=0.0):
       self.FOV = FOV
-      self.res = res
+      self.res = np.array([r + int(r % 2 != 0) if i==0 else r for (i, r) in enumerate(res)])
       self.oversampling = oversampling
       self.Gr_max = Gr_max          # [mT/m]
       self.Gr_max_ = 1.0e-3*Gr_max  # [T/m]
@@ -185,11 +185,13 @@ class Trajectory:
       self.gamma_ = 2*np.pi*1e+6*gammabar     # [rad/T]
       self.lines_per_shot = lines_per_shot
       self.pxsz = FOV/res
-      self.k_spa = 1.0/np.array([oversampling*FOV[0], FOV[1], FOV[2]])
+      self.k_spa = 1.0/np.array([oversampling*FOV[0], 
+                                FOV[1], 
+                                FOV[2]])
       self.k_bw  = 1.0/self.pxsz
-      self.kx_max = self.k_spa[0]*(np.floor([-0.5*(oversampling*res[0]-1), 0.5*(oversampling*res[0]-1)]) + res[0] % oversampling)
-      self.ky_max = self.k_spa[1]*np.floor([-0.5*(res[1]-1), 0.5*(res[1]-1)])
-      self.kz_max = self.k_spa[2]*np.floor([-0.5*(res[2]-1), 0.5*(res[2]-1)])
+      self.kx_max = self.k_spa[0]*(np.array([0, oversampling*self.res[0] - 1]) - oversampling*self.res[0]//2)
+      self.ky_max = self.k_spa[1]*(np.array([0, self.res[1] - 1]) - self.res[1]//2)
+      self.kz_max = self.k_spa[2]*(np.array([0, self.res[2] - 1]) - self.res[2]//2)
       self.ro_samples = oversampling*res[0] # number of readout samples
       self.slices = res[2]                  # number of slices
       self.VENC = VENC  # [m/s]
@@ -214,6 +216,8 @@ class Cartesian(Trajectory):
       super().__init__(*args, **kwargs)
       self.ph_samples = self.check_ph_enc_lines(self.res[1])
       (self.points, self.times) = self.kspace_points()
+      # Send the information to each process if running in parallel
+      (self.local_points, self.local_times, self.local_idx) = scatterKspace(self.points, self.times)
 
     def kspace_points(self):
       ''' Get kspace points '''
@@ -320,9 +324,9 @@ class Cartesian(Trajectory):
       # Calculate echo time
       self.echo_time = venc_time + ro_grad0.dur_ + 0.5*self.lines_per_shot*ro_grad.dur_
 
-      # Send the information to each process if running in parallel
-      kspace, t, local_idx = scatterKspace(kspace, t)
-      self.local_idx = local_idx
+      # # Send the information to each process if running in parallel
+      # kspace, t, local_idx = scatterKspace(kspace, t)
+      # self.local_idx = local_idx
 
       return (kspace, t)
 

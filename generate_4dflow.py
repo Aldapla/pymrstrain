@@ -46,7 +46,7 @@ if __name__ == '__main__':
   LOC = np.array(pars['Formatting']['LOC'])
 
   # Imaging sequences for the image generation
-  sequences = ['FFE', 'EPI']
+  sequences = ['EPI'] #['FFE', 'EPI']
 
   # Iterate over sequences
   for seq in sequences:
@@ -112,7 +112,7 @@ if __name__ == '__main__':
       # Generate 4D flow image
       if MPI_rank == 0: print('Generating frame {:d}'.format(fr))
       t0 = time.time()
-      K[traj.local_idx,:,:,:,fr] = FlowImage3D(MPI_rank, M, traj.points, traj.times, velocity, nodes, gamma_x_delta_B0, T2star, VENC, profile)
+      K[traj.local_idx,:,:,:,fr] = FlowImage3D(MPI_rank, M, traj.local_points, traj.local_times, velocity, nodes, gamma_x_delta_B0, T2star, VENC, profile)
       t1 = time.time()
       times.append(t1-t0)
 
