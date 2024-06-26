@@ -185,9 +185,9 @@ class Trajectory:
       self.gamma_ = 2*np.pi*1e+6*gammabar     # [rad/T]
       self.lines_per_shot = lines_per_shot
       self.pxsz = FOV/res
-      self.k_spa = 1.0/np.array([oversampling*FOV[0], 
-                                FOV[1], 
-                                FOV[2]])
+      self.k_spa = 1.0/np.array([[oversampling*FOV[0] - self.pxsz[0]],
+                                 [FOV[1] - self.pxsz[1]],
+                                 [FOV[2] - self.pxsz[2] if self.res[2] > 1 else FOV[2]]]).reshape((3,))
       self.k_bw  = 1.0/self.pxsz
       self.kx_max = self.k_spa[0]*(np.array([0, oversampling*self.res[0] - 1]) - oversampling*self.res[0]//2)
       self.ky_max = self.k_spa[1]*(np.array([0, self.res[1] - 1]) - self.res[1]//2)
