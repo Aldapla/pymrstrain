@@ -13,7 +13,7 @@ from PyMRStrain.Plotter import MRIPlotter
 if __name__ == '__main__':
 
   # Import image kspace
-  im_file = 'MRImages/EPI_V250.pkl'
+  im_file = 'MRImages/FFE_V250.pkl'
   with open(im_file, 'rb') as f:
     data = pickle.load(f)
 
@@ -46,7 +46,15 @@ if __name__ == '__main__':
   K_fil = H*K
 
   # Reconstruct image
-  I = ktoi(K_fil[::2,...],[0,1,2])
+  I = ktoi(K_fil,[0,1,2])
+
+  # Chop if needed
+  if (K.shape[0] == data['traj'].res[0]):
+      I = I
+  else:
+      ind1 = int(np.floor((K.shape[0] - data['traj'].res[0])/2))
+      ind2 = int(np.floor((K.shape[0] - data['traj'].res[0])/2)+data['traj'].res[0])
+      I = I[ind1:ind2,...]
 
   # Show image
   M = np.abs(I[...,2,:])

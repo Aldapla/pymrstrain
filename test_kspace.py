@@ -17,7 +17,7 @@ def nufft_recon(traj, K):
   x0 *= res[0]//2/x0.max()
   x1 *= res[1]//2/x1.max()
   dcf = (x0**2 + x1**2)**0.5              # density compensation function
-  kxky = np.concatenate((x0,x1),axis=1)   # flattened kspace coordinates
+  kxky = np.concatenate((x0,x1), axis=1)   # flattened kspace coordinates
   y = K.flatten().reshape((-1,1))         # flattened kspace measures
   image = nufft_adjoint(y*dcf, kxky, res) # inverse nufft
   return image
@@ -29,7 +29,7 @@ def nufft_cart_recon(traj, K):
   x0 *= res[0]//2/x0.max()
   x1 *= res[1]//2/x1.max()
   dcf = 1#(x0**2 + x1**2)**0.5              # density compensation function
-  kxky = np.concatenate((x0,x1),axis=1)   # flattened kspace coordinates
+  kxky = np.concatenate((x0,x1), axis=1)   # flattened kspace coordinates
   y = K.flatten().reshape((-1,1))         # flattened kspace measures
   image = nufft_adjoint(y*dcf, kxky, res) # inverse nufft
   return image

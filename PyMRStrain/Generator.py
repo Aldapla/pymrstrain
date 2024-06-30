@@ -3,16 +3,17 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-from Connectivity import getConnectivity3, update_p2s
-from ImageBuilding import (CSPAMM_magnetizations, DENSE_magnetizations,
-                           EXACT_magnetizations, ORI_O_CSPAMM_magnetizations,
-                           get_images)
+from PyMRStrain.Connectivity import getConnectivity3, update_p2s
 from PyMRStrain.Helpers import (cropping_ranges, m_dirs, order,
                                 restore_resolution)
+from PyMRStrain.ImageBuilding import (CSPAMM_magnetizations,
+                                      DENSE_magnetizations,
+                                      EXACT_magnetizations,
+                                      ORI_O_CSPAMM_magnetizations, get_images)
 from PyMRStrain.KSpace import kspace
 from PyMRStrain.Math import itok, ktoi
 from PyMRStrain.MPIUtilities import MPI_print, MPI_rank, MPI_size, gather_image
-from PyMRStrain.PySpinBasedUtils import (check_kspace_bw, check_nb_slices,
+from PyMRStrain.pySpinBasedUtils import (check_kspace_bw, check_nb_slices,
                                          update_s2p)
 from PyMRStrain.Spins import Function
 

@@ -203,7 +203,7 @@ class Phantom(PhantomBase):
     return self.u, self.v
 
 
-class femPhantom:
+class FEMPhantom:
   def __init__(self, path='', scale_factor=1.0, vel_label='velocity', accel_label='acceleration', press_label='pressure'):
     self.path = path
     self.scale_factor = scale_factor

@@ -38,7 +38,7 @@ class get_pybind_include(object):
 
 ext_modules = [
     Extension(
-        'ImageBuilding',
+        'PyMRStrain.ImageBuilding',
         ['PyMRStrain/src/ImageBuilding.cpp'],
         include_dirs=[
             # Path to pybind11 headers
@@ -49,7 +49,7 @@ ext_modules = [
         language='c++',
     ),
     Extension(
-        'Connectivity',
+        'PyMRStrain.Connectivity',
         ['PyMRStrain/src/Connectivity.cpp'],
         include_dirs=[
             # Path to pybind11 headers
@@ -59,7 +59,7 @@ ext_modules = [
         language='c++',
     ),
     Extension(
-        'TrajToImage',
+        'PyMRStrain.TrajToImage',
         ['PyMRStrain/src/TrajToImage.cpp'],
         include_dirs=[
             # Path to pybind11 headers
@@ -69,7 +69,7 @@ ext_modules = [
         language='c++',
     ),
     Extension(
-        'Fem',
+        'PyMRStrain.Fem',
         ['PyMRStrain/src/Fem.cpp'],
         include_dirs=[
             # Path to pybind11 headers
@@ -79,7 +79,7 @@ ext_modules = [
         language='c++',
     ),
     Extension(
-        'FlowToImage',
+        'PyMRStrain.FlowToImage',
         ['PyMRStrain/src/FlowToImage.cpp'],
         include_dirs=[
             # Path to pybind11 headers
@@ -161,7 +161,7 @@ class BuildExt(build_ext):
 setup(name='PyMRStrain',
       version='0.1',
       packages=['PyMRStrain'],
-      description='Strain Phantom Library',
+      description='Python library for the generation of synthetic MR images',
       long_description=read('README.md'),
       ext_modules=ext_modules,
       install_requires=['pybind11>=2.11'],

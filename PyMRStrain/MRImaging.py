@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+
 from PyMRStrain.Filters import Hamming_filter, Riesz_filter, Tukey_filter
 from PyMRStrain.Helpers import build_idx, order
 from PyMRStrain.Math import itok, ktoi

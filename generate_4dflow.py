@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import meshio
 import numpy as np
 import yaml
-from Fem import massAssemble
-from FlowToImage import FlowImage3D
 
+from PyMRStrain.Fem import massAssemble
+from PyMRStrain.FlowToImage import FlowImage3D
 from PyMRStrain.IO import scale_data
 from PyMRStrain.KSpaceTraj import Cartesian
 from PyMRStrain.Math import Rx, Ry, Rz, itok, ktoi
@@ -46,7 +46,7 @@ if __name__ == '__main__':
   LOC = np.array(pars['Formatting']['LOC'])
 
   # Imaging sequences for the image generation
-  sequences = ['EPI'] #['FFE', 'EPI']
+  sequences = ['FFE'] #['FFE', 'EPI']
 
   # Iterate over sequences
   for seq in sequences:
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     times = []
 
     # Iterate over cardiac phases
-    for fr in range(phantom.Nfr):
+    for fr in [0]:#range(phantom.Nfr):
 
       # Read velocity data in frame fr
       phantom.read_data(fr)

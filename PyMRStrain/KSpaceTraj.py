@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from PyMRStrain.Math import divide_no_nan
 from PyMRStrain.MPIUtilities import scatterKspace
 
 # plt.rcParams['text.usetex'] = True
@@ -173,27 +174,27 @@ class Gradient:
 # Generic tracjectory
 class Trajectory:
   def __init__(self, FOV=np.array([0.3, 0.3, 0.08]), res=np.array([100, 100, 1]), oversampling=2, Gr_max=30, Gr_sr=195, lines_per_shot=7, gammabar=42.58, VENC=None, receiver_bw=128.0e+3, plot_seq=False, MPS_ori=np.eye(3), LOC=0.0):
-      self.FOV = FOV
-      self.res = np.array([r + int(r % 2 != 0) if i==0 else r for (i, r) in enumerate(res)])
       self.oversampling = oversampling
+      self.oversampling_arr = np.array([oversampling, 1.0, 1.0])
       self.Gr_max = Gr_max          # [mT/m]
       self.Gr_max_ = 1.0e-3*Gr_max  # [T/m]
-      self.Gr_sr  = Gr_sr     # [mT/(m*ms)]
-      self.Gr_sr_ = Gr_sr     # [T/(m*s)]
+      self.Gr_sr  = Gr_sr           # [mT/(m*ms)]
+      self.Gr_sr_ = Gr_sr           # [T/(m*s)]
       self.gammabar = gammabar                # [MHz/T]
       self.gammabar_ = 1e+6*gammabar          # [Hz/T]
       self.gamma_ = 2*np.pi*1e+6*gammabar     # [rad/T]
       self.lines_per_shot = lines_per_shot
-      self.pxsz = FOV/res
-      self.k_spa = 1.0/np.array([[oversampling*FOV[0] - self.pxsz[0]],
-                                 [FOV[1] - self.pxsz[1]],
-                                 [FOV[2] - self.pxsz[2] if self.res[2] > 1 else FOV[2]]]).reshape((3,))
-      self.k_bw  = 1.0/self.pxsz
-      self.kx_max = self.k_spa[0]*(np.array([0, oversampling*self.res[0] - 1]) - oversampling*self.res[0]//2)
-      self.ky_max = self.k_spa[1]*(np.array([0, self.res[1] - 1]) - self.res[1]//2)
-      self.kz_max = self.k_spa[2]*(np.array([0, self.res[2] - 1]) - self.res[2]//2)
-      self.ro_samples = oversampling*res[0] # number of readout samples
-      self.slices = res[2]                  # number of slices
+      self.res = res
+      self.ro_samples = self.oversampling*self.res[0] # number of readout samples
+      self.ph_samples = self.check_ph_enc_lines(self.res[1])
+      self.slices = self.res[2]                  # number of slices
+      self.FOV = FOV
+      self.pxsz = FOV/self.res
+      self.k_bw = 1.0/self.pxsz
+      self.k_spa = 1.0/(self.oversampling_arr*self.FOV)
+      self.kx_extent = (np.array([0, self.ro_samples - 1]) - self.ro_samples//2 )*self.k_spa[0] + (self.res[0] % 2 != 0)*self.k_spa[0]
+      self.ky_extent = (np.array([0, self.ph_samples - 1]) - self.ph_samples//2)*self.k_spa[1]
+      self.kz_extent = (np.array([0, self.slices - 1]) - self.slices//2)*self.k_spa[2]
       self.VENC = VENC  # [m/s]
       self.plot_seq = plot_seq
       self.receiver_bw = receiver_bw          # [Hz]
@@ -222,9 +223,13 @@ class Cartesian(Trajectory):
     def kspace_points(self):
       ''' Get kspace points '''
       # Bipolar gradient
+      bipolar = Gradient(t_ref=0.0, Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
       if self.VENC != None:
-        bipolar = Gradient(t_ref=0.0, Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
         bipolar.calculate_bipolar(self.VENC)
+      else:
+        # Use an extremely large VENC to generate bipolar gradients with
+        # an almost zero duration (in the order of 1e-10 ms)
+        bipolar.calculate_bipolar(1.0e+30)
 
       # k-space positioning gradients
       ph_grad = Gradient(t_ref=bipolar.timings[-1], Gr_max=self.Gr_max, Gr_sr=self.Gr_sr)
@@ -287,9 +292,9 @@ class Cartesian(Trajectory):
         venc_time = bipolar.dur_
 
       # kspace locations
-      kx = np.linspace(self.kx_max[0], self.kx_max[1], self.ro_samples)
-      ky = self.ky_max[0]*np.ones(kx.shape)
-      kz = np.linspace(self.kz_max[0], self.kz_max[1], self.slices)
+      kx = np.linspace(self.kx_extent[0], self.kx_extent[1], self.ro_samples)
+      ky = self.ky_extent[0]*np.ones(kx.shape)
+      kz = np.linspace(self.kz_extent[0], self.kz_extent[1], self.slices)
 
       kspace = (np.zeros([self.ro_samples, self.ph_samples, self.slices],     
                 dtype=np.float32),
@@ -416,7 +421,7 @@ class Radial(Trajectory):
       plt.show()
 
 
-# Radial trajectory
+# Spiral trajectory
 class Spiral(Trajectory):
     def __init__(self, *args, interleaves=20, parameters=[], **kwargs):
       super().__init__(*args, **kwargs)

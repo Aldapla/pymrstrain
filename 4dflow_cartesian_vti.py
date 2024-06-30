@@ -1,31 +1,16 @@
 import os
-from subprocess import run
+import pickle
+from pathlib import Path
 
-import matplotlib.pyplot as plt
-import meshio
 import numpy as np
-from pyevtk.hl import imageToVTK
-from pyevtk.vtk import VtkGroup
 import yaml
-from PyMRStrain.Math import itok, ktoi
+
+from PyMRStrain.Filters import Tukey_filter
+from PyMRStrain.IO import VTIFile, XDMFFile
+from PyMRStrain.KSpaceTraj import Cartesian, Radial, Spiral
+from PyMRStrain.Math import Rx, Ry, Rz, itok, ktoi
 from PyMRStrain.Noise import add_cpx_noise
-from PyMRStrain.Plotter import multi_slice_viewer
-
-
-def Rx(tx):
-  return np.array([[1, 0, 0],
-                    [0, np.cos(tx), -np.sin(tx)],
-                    [0, np.sin(tx), np.cos(tx)]])
-
-def Ry(ty):
-  return np.array([[np.cos(ty), 0, np.sin(ty)],
-                    [0, 1, 0],
-                    [-np.sin(ty), 0, np.cos(ty)]])
-
-def Rz(tz):
-  return np.array([[np.cos(tz), -np.sin(tz), 0],
-                    [np.sin(tz), np.cos(tz), 0],
-                    [0, 0, 1]])
+from PyMRStrain.Phantom import FEMPhantom
 
 if __name__ == '__main__':
 
@@ -36,108 +21,148 @@ if __name__ == '__main__':
   # Imaging parameters
   FOV = np.array(pars["Imaging"]["FOV"])
   RES = np.array(pars["Imaging"]["RES"])
+  T2star = pars["Imaging"]["T2star"]/1000.0
+  VENC = pars["Imaging"]["VENC"]*100.0
+  OFAC = pars["Imaging"]["OVERSAMPLING"]
   dt = pars["Imaging"]["TIMESPACING"]
 
-  # Formatting parameters
-  tx = pars["Formatting"]["tx"]
-  ty = pars["Formatting"]["ty"]
-  tz = pars["Formatting"]["tz"]
+  # Hardware parameters
+  G_sr  = pars["Hardware"]["G_sr"]
+  G_max = pars["Hardware"]["G_max"]
+  r_BW  = pars["Hardware"]["r_BW"]
+
+  # Imaging orientation parameters
+  theta_x = np.deg2rad(pars["Formatting"]["theta_x"])
+  theta_y = np.deg2rad(pars["Formatting"]["theta_y"])
+  theta_z = np.deg2rad(pars["Formatting"]["theta_z"])
+  LOCs = np.array(pars["Formatting"]["LOC"])
+
+  # Build rotation matrix and get slice location
+  MPS_ori = Rz(theta_z)@Rx(theta_x)@Ry(theta_y)
+  LOC = LOCs
 
   # Import generated data
-  seq  = 'FFE'
-  VENC = 250
-  Hcr  = 45
-  K = np.load('MRImages/HCR{:d}/{:s}_V{:d}.npy'.format(Hcr,seq,VENC))
+  im_file = Path('MRImages/FFE_V250.pkl')
+  with open(im_file, 'rb') as f:
+    data = pickle.load(f)
+
+  # Extract information from data
+  K = data['kspace']
+  print(1.0/data['traj'].k_spa)
+  print(FOV)
+  print(data['traj'].pxsz)
 
   # Fix the direction of kspace lines measured in the opposite direction
-  if seq == 'EPI':
-    K[:,1::2,...] = K[::-1,1::2,...]
+  if isinstance(data['traj'], Cartesian) and data['traj'].lines_per_shot > 1:   
+    # Reorder lines depending of their readout direction
+    for ph in range(K.shape[1]):
+      # The first line in every shot should be ordered from left to right
+      if ph % data['traj'].lines_per_shot == 0:
+        ro = 1
 
-  # Apply the inverse Fourier transform to obtain the image
-  I = ktoi(K[::2,::-1,...],[0,1,2])
+      # Reverse orientations (only when ro=-1)
+      K[::ro,ph,...] = K[::1,ph,...]
+
+      # Reverse readout
+      ro = -ro
+
+  print(data['traj'].res)
+  # Zero padding in the dimensions with even measurements to avoid shifts in 
+  # the image domain
+  if data['traj'].res[0] % 2 == 0:
+    pad_width = ((0, 1), (0, 0), (0, 0), (0, 0), (0, 0))
+    K = np.pad(K, pad_width, mode='constant')
+    data['traj'].res[0] += 1
+  if data['traj'].res[1] % 2 == 0:
+    pad_width = ((0, 0), (0, 1), (0, 0), (0, 0), (0, 0))
+    K = np.pad(K, pad_width, mode='constant')
+    data['traj'].res[1] += 1
+  if data['traj'].res[2] % 2 == 0:
+    pad_width = ((0, 0), (0, 0), (0, 1), (0, 0), (0, 0))
+    K = np.pad(K, pad_width, mode='constant')
+    data['traj'].res[2] += 1
+  print(data['traj'].res)
 
   # Add noise
-  I = add_cpx_noise(I, relative_std=0.025, mask=1)
+  # K = itok(add_cpx_noise(ktoi(K, [0,1,2]), relative_std=0.01, mask=1), [0,1,2])
 
-  # Make sure the directory exist
-  vti_path = "MRImages/HCR{:d}/vti".format(Hcr)
-  if not os.path.isdir(vti_path):
-    os.makedirs(vti_path, exist_ok=True)
+  # Kspace filtering (as the scanner would do)
+  h_meas = Tukey_filter(K.shape[0], width=0.9, lift=0.3)
+  h_pha  = Tukey_filter(K.shape[1], width=0.9, lift=0.3)
+  h = np.outer(h_meas, h_pha)
+  H = np.tile(h[:,:,np.newaxis, np.newaxis, np.newaxis], (1, 1, K.shape[2], K.shape[3], K.shape[4]))
+  K_fil = H*K
+
+  # Apply the inverse Fourier transform to obtain the image
+  I = ktoi(K_fil[::2,...], [0,1,2])
+
+  # # Chop if needed
+  # enc_Nx = K.shape[0]
+  # rec_Nx = data['traj'].res[0]
+  # if (enc_Nx == rec_Nx):
+  #     I = I
+  # else:
+  #     ind1 = (enc_Nx - rec_Nx) // 2 #+ (data['traj'].res[0]-1 % 2 != 0)
+  #     ind2 = (enc_Nx - rec_Nx) // 2 + rec_Nx #+ (data['traj'].res[0]-1 % 2 != 0)
+  #     print(ind1)
+  #     print(ind2)
+  #     I = I[ind1:ind2,...]
+  # print("Image shape after correcting oversampling: ",I.shape)
 
   # Origin and pixel spacing of the generated image
-  origin  = -0.5*FOV
-  spacing = FOV/RES
+  # spacing = (data['traj'].pxsz).tolist()
+  spacing = (data['traj'].FOV/data['traj'].res).tolist()
+  origin  = (MPS_ori@(-0.5*data['traj'].FOV) + LOC).tolist()
 
-  # Conver to tuple
-  origin  = tuple(origin)
-  spacing = tuple(spacing)
 
-  # Create VtkGroup object to write PVD
-  pvd = VtkGroup(vti_path+'/IM_{:s}_V{:d}'.format(seq,VENC))
+  # #########################################################
+  # #   Export images to vti
+  # #########################################################
 
-  # Export vti files
-  print("Exporting vti...")
-  for fr in range(K.shape[-1]):
-    print("    writing fame {:d}".format(fr))
+  # Create VTIFile
+  vti_file = im_file.parents[0]/('vti/' + im_file.stem + '.pvd')
+  file = VTIFile(filename=str(vti_file), origin=origin, spacing=spacing, direction=MPS_ori.flatten().tolist(), nbFrames=K.shape[-1])
 
-    # Get velocity and magnitude
-    v = (np.angle(I[:,:,:,0,fr]), np.angle(I[:,:,:,1,fr]), np.angle(I[:,:,:,2,fr]))
-    m = (np.abs(I[:,:,:,0,fr]), np.abs(I[:,:,:,1,fr]), np.abs(I[:,:,:,2,fr]))
+  # Get velocity and magnitude
+  v_factor = (VENC/100.0)*(1/np.pi)
+  vx = v_factor*np.angle(I[...,0,:]).copy()
+  vy = v_factor*np.angle(I[...,1,:]).copy()
+  vz = v_factor*np.angle(I[...,2,:]).copy()
+  mx = np.abs(I[...,0,:]).copy()
+  my = np.abs(I[...,1,:]).copy()
+  mz = np.abs(I[...,2,:]).copy()
 
-    # Estimate angiographic image
-    angio = (m[0] + m[1] + m[2])/3*np.sqrt(v[0]**2 + v[1]**2 + v[2]**2)/K.shape[-1]
+  # Estimate angiographic image
+  velocity_magnitude = np.sqrt(vx**2 + vy**2 + vz**2)
+  angio = ( (mx + my + mz)/3 )*velocity_magnitude/K.shape[-1]
 
-    # Write VTI
-    frame_path = vti_path+'/IM_{:s}_V{:d}_{:04d}'.format(seq,VENC,fr)
-    imageToVTK(frame_path, cellData={'velocity': v, 'angiography': angio, 'magnitude': m}, origin=origin, spacing=spacing)
+  # Write VTI
+  file.write(cellData={'velocity_x': vx, 'velocity_y': vy, 'velocity_z': vz, 'angiography': angio, 'magnitude': mx})
 
-    # Add VTI files to pvd group
-    pvd.addFile(filepath=frame_path+'.vti', sim_time=fr*dt)
 
-  # Save PVD
-  pvd.save()
+  # #########################################################
+  # #   Export scaled phantom to xdmf
+  # #########################################################
+  # # Create phantom object
+  # sim_file = Path('phantom/phantom.xdmf')
+  # phantom = femPhantom(path=str(sim_file), scale_factor=0.01)
 
-  # Import mesh, translate it to the origin, rotate it, and scale to meters
-  path_NS = "phantoms/Non-linear/HCR{:d}/xdmf/phantom.xdmf".format(Hcr)
-  with meshio.xdmf.TimeSeriesReader(path_NS) as reader:
-    nodes, elems = reader.read_points_cells()
-    nodes[:,0] -= 0.5*(nodes[:,0].max()+nodes[:,0].min()) # x-translation
-    nodes[:,1] -= 0.5*(nodes[:,1].max()+nodes[:,1].min()) # y-translation
-    nodes[:,2] -= 0.5*(nodes[:,2].max()+nodes[:,2].min()) # z-translation
-    nodes = (Rz(tz)@Ry(ty)@Rx(tx)@nodes.T).T  # mesh rotation
-    nodes /= 100  # mesh scaling
-    Nfr = reader.num_steps # number of frames
+  # # Create XDMFFile to export scaled data
+  # xdmf_file = im_file.parents[0]/'xdmf/phantom.xdmf'
+  # file = XDMFFile(filename=str(xdmf_file), nodes=phantom.mesh['nodes'], elements=phantom.mesh['all_elems'])
 
-    # Path to export the generated data
-    xdmf_path = "MRImages/HCR{:d}/xdmf".format(Hcr)
+  # # Write data
+  # for fr in range(phantom.Nfr):
 
-    # Make sure the directory exist
-    if not os.path.isdir(xdmf_path):
-      os.makedirs(xdmf_path, exist_ok=True)
+  #   # Read velocity at current timestep
+  #   phantom.read_data(fr)
 
-    # Write data
-    xdmffile_path = xdmf_path+"/phantom.xdmf".format(Hcr)
-    print("Exporting XDMF file in the image domain...")
-    with meshio.xdmf.TimeSeriesWriter(xdmffile_path) as writer:
-      writer.write_points_cells(nodes, elems)
+  #   # Get information from phantom
+  #   velocity = phantom.velocity
 
-      # Iterate over cardiac phases
-      for fr in range(Nfr):
-        print("    writing frame {:d}".format(fr))
+  #   # Export data in the registered frame
+  #   # file.write(cellData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr*dt)
+  #   file.write(pointData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr)
 
-        # Read velocity and pressure data in each time step
-        d, point_data, cell_data = reader.read_data(fr)
-        velocity = point_data['velocity']
-        pressure = point_data['pressure']
-
-        # Rotate velocity
-        velocity = (Rz(tz)@Ry(ty)@Rx(tx)@velocity.T).T
-
-        # Convert everything to meters
-        velocity /= 100
-
-        # Export data in the registered frame
-        writer.write_data(fr*dt, point_data={"velocity": velocity, "pressure": pressure})
-
-    # Move generated HDF5 file to the right folder
-    run(['mv','phantom.h5',xdmf_path])
+  # # Close XDMFFile
+  # file.close()
