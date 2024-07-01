@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import yaml
+from skimage.transform import resize
 
 from PyMRStrain.Filters import Tukey_filter
 from PyMRStrain.IO import VTIFile, XDMFFile
@@ -49,9 +50,6 @@ if __name__ == '__main__':
 
   # Extract information from data
   K = data['kspace']
-  print(1.0/data['traj'].k_spa)
-  print(FOV)
-  print(data['traj'].pxsz)
 
   # Fix the direction of kspace lines measured in the opposite direction
   if isinstance(data['traj'], Cartesian) and data['traj'].lines_per_shot > 1:   
@@ -67,25 +65,23 @@ if __name__ == '__main__':
       # Reverse readout
       ro = -ro
 
-  print(data['traj'].res)
   # Zero padding in the dimensions with even measurements to avoid shifts in 
   # the image domain
   if data['traj'].res[0] % 2 == 0:
     pad_width = ((0, 1), (0, 0), (0, 0), (0, 0), (0, 0))
     K = np.pad(K, pad_width, mode='constant')
-    data['traj'].res[0] += 1
+    # data['traj'].res[0] += 1
   if data['traj'].res[1] % 2 == 0:
     pad_width = ((0, 0), (0, 1), (0, 0), (0, 0), (0, 0))
     K = np.pad(K, pad_width, mode='constant')
-    data['traj'].res[1] += 1
+    # data['traj'].res[1] += 1
   if data['traj'].res[2] % 2 == 0:
     pad_width = ((0, 0), (0, 0), (0, 1), (0, 0), (0, 0))
     K = np.pad(K, pad_width, mode='constant')
-    data['traj'].res[2] += 1
-  print(data['traj'].res)
+    # data['traj'].res[2] += 1
 
   # Add noise
-  # K = itok(add_cpx_noise(ktoi(K, [0,1,2]), relative_std=0.01, mask=1), [0,1,2])
+  K = itok(add_cpx_noise(ktoi(K, [0,1,2]), relative_std=0.01, mask=1), [0,1,2])
 
   # Kspace filtering (as the scanner would do)
   h_meas = Tukey_filter(K.shape[0], width=0.9, lift=0.3)
@@ -95,24 +91,28 @@ if __name__ == '__main__':
   K_fil = H*K
 
   # Apply the inverse Fourier transform to obtain the image
-  I = ktoi(K_fil[::2,...], [0,1,2])
+  I = ktoi(K_fil[::1,...], [0,1,2])
+
+  # The final image can resized to achieve the desired resolution
+  resized_shape = np.hstack((data['traj'].oversampling_arr*data['traj'].res, I.shape[3:]))  
+  I = resize(np.real(I), resized_shape) + 1j*resize(np.imag(I), resized_shape)
+
+  # Chop if needed
+  enc_Nx = K.shape[0]
+  rec_Nx = data['traj'].res[0]
+  if (enc_Nx == rec_Nx):
+      I = I
+  else:
+      ind1 = (enc_Nx - rec_Nx) // 2 #+ (data['traj'].res[0]-1 % 2 != 0)
+      ind2 = (enc_Nx - rec_Nx) // 2 + rec_Nx #+ (data['traj'].res[0]-1 % 2 != 0)
+      print(ind1)
+      print(ind2)
+      I = I[ind1:ind2,...]
+  print("Image shape after correcting oversampling: ",I.shape)
 
   # Plot image using matplotlib plotter
-  plotter = MRIPlotter(images=[np.abs(I), np.angle(I)])
+  plotter = MRIPlotter(images=[np.abs(I[...,2,:]), np.angle(I[...,2,:])])
   plotter.show()
-
-  # # Chop if needed
-  # enc_Nx = K.shape[0]
-  # rec_Nx = data['traj'].res[0]
-  # if (enc_Nx == rec_Nx):
-  #     I = I
-  # else:
-  #     ind1 = (enc_Nx - rec_Nx) // 2 #+ (data['traj'].res[0]-1 % 2 != 0)
-  #     ind2 = (enc_Nx - rec_Nx) // 2 + rec_Nx #+ (data['traj'].res[0]-1 % 2 != 0)
-  #     print(ind1)
-  #     print(ind2)
-  #     I = I[ind1:ind2,...]
-  # print("Image shape after correcting oversampling: ",I.shape)
 
   # Origin and pixel spacing of the generated image
   # spacing = (data['traj'].pxsz).tolist()
@@ -145,29 +145,29 @@ if __name__ == '__main__':
   file.write(cellData={'velocity_x': vx, 'velocity_y': vy, 'velocity_z': vz, 'angiography': angio, 'magnitude': mx})
 
 
-  # #########################################################
-  # #   Export scaled phantom to xdmf
-  # #########################################################
-  # # Create phantom object
-  # sim_file = Path('phantom/phantom.xdmf')
-  # phantom = femPhantom(path=str(sim_file), scale_factor=0.01)
+  #########################################################
+  #   Export scaled phantom to xdmf
+  #########################################################
+  # Create phantom object
+  sim_file = Path('phantoms/aorta_CFD.xdmf')
+  phantom = FEMPhantom(path=str(sim_file), scale_factor=0.01)
 
-  # # Create XDMFFile to export scaled data
-  # xdmf_file = im_file.parents[0]/'xdmf/phantom.xdmf'
-  # file = XDMFFile(filename=str(xdmf_file), nodes=phantom.mesh['nodes'], elements=phantom.mesh['all_elems'])
+  # Create XDMFFile to export scaled data
+  xdmf_file = im_file.parents[0]/'xdmf/aorta_CFD.xdmf'
+  file = XDMFFile(filename=str(xdmf_file), nodes=phantom.mesh['nodes'], elements=phantom.mesh['all_elems'])
 
-  # # Write data
-  # for fr in range(phantom.Nfr):
+  # Write data
+  for fr in range(phantom.Nfr):
 
-  #   # Read velocity at current timestep
-  #   phantom.read_data(fr)
+    # Read velocity at current timestep
+    phantom.read_data(fr)
 
-  #   # Get information from phantom
-  #   velocity = phantom.velocity
+    # Get information from phantom
+    velocity = phantom.velocity
 
-  #   # Export data in the registered frame
-  #   # file.write(cellData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr*dt)
-  #   file.write(pointData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr)
+    # Export data in the registered frame
+    # file.write(cellData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr*dt)
+    file.write(pointData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr)
 
-  # # Close XDMFFile
-  # file.close()
+  # Close XDMFFile
+  file.close()

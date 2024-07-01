@@ -47,7 +47,7 @@ if __name__ == '__main__':
   sequence = 'FFE' # 'FFE' or 'EPI' (SPIRAL and RADIAL are also options)
 
   # Navier-Stokes simulation data to be used
-  phantom_file = 'phantom/phantom.xdmf'
+  phantom_file = 'phantoms/aorta_CFD.xdmf'
 
   # Create FEM phantom object
   phantom = FEMPhantom(path=phantom_file, vel_label='velocity', scale_factor=0.01)
@@ -78,12 +78,7 @@ if __name__ == '__main__':
   nodes = (phantom.mesh['nodes'] - traj.LOC)@traj.MPS_ori
 
   # Slice profile
-  # gammabar = 1.0e+6*42.58 # Hz/T 
-  # G_z = 1.0e-3*30.0       # [T/m]
-  delta_z = FOV[2]        # [m]
-  # delta_g = gammabar*G_z*delta_z
-  profile = SliceProfile(z=nodes[:,2], delta_z=delta_z).profile
-  # profile = np.ones_like(nodes[:,2])
+  profile = SliceProfile(z=nodes[:,2], delta_z=FOV[2], NbLobes=4, flip_angle=np.deg2rad(15), RFShape='sinc')
 
   # Print echo time
   if MPI_rank==0: print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))

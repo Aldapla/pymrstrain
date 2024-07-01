@@ -25,9 +25,8 @@ def FlowImage3D(M, kxyz, t ,v, r0, gamma_x_delta_B0, T2, VENC, profile):
 
   # Kspace and Fourier exponential
   Mxy = 1.0e+3 * nb_spins * cp.exp(1j * cp.pi / VENC * v) * profile
-  fe_xy = cp.zeros([nb_spins, 1], dtype=cp.float32)
-  fe    = cp.zeros([nb_spins, 1], dtype=cp.complex64)
-  phi_off = cp.zeros([nb_spins, 1],  dtype=cp.float32)
+  fe = cp.zeros([nb_spins, 1], dtype=cp.complex64)
+  phi_off = cp.zeros([nb_spins, 1], dtype=cp.float32)
 
   # kspace
   kspace = cp.zeros([nb_meas, nb_lines, nb_kz, 3], dtype=cp.complex64)
