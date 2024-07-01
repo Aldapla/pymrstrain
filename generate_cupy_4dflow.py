@@ -90,7 +90,7 @@ if __name__ == '__main__':
   cp_nodes = (cp_nodes - LOC)@MPS_ori
 
   # Slice profile
-  profile = cp.asarray(np.tile(SliceProfile(z=cp_nodes[:,2].get(), delta_z=FOV[2], NbLobes=4, flip_angle=np.deg2rad(90), RFShape='hard').profile[:, np.newaxis], (1, 3)), dtype=cp.float32)
+  profile = cp.asarray(np.tile(SliceProfile(z=cp_nodes[:,2].get(), delta_z=FOV[2], NbLobes=4, flip_angle=np.deg2rad(90), RFShape='sinc').profile[:, np.newaxis], (1, 3)), dtype=cp.float32)
 
   # Print echo time
   print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
