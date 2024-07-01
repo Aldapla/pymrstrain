@@ -78,7 +78,7 @@ if __name__ == '__main__':
   nodes = (phantom.mesh['nodes'] - traj.LOC)@traj.MPS_ori
 
   # Slice profile
-  profile = SliceProfile(z=nodes[:,2], delta_z=FOV[2], NbLobes=4, flip_angle=np.deg2rad(15), RFShape='sinc')
+  profile = SliceProfile(z=nodes[:,2], delta_z=FOV[2], NbLobes=4, flip_angle=np.deg2rad(15), RFShape='sinc').profile
 
   # Print echo time
   if MPI_rank==0: print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
