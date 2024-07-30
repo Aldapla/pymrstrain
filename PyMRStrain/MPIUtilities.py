@@ -111,8 +111,6 @@ def ScatterSpins(coordinates):
 
 
 # Printing function for parallel processing
-def MPI_print(string):
-    if MPI_rank == 0:
-        print(string)
-    else:
-        pass
+def MPI_print(*args, **kwargs):
+  if MPI_rank == 0:
+    print(*args, **kwargs)

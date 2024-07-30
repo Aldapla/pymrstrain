@@ -1,9 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.integrate import DOP853, RK23, RK45
 from scipy.interpolate import interp1d
 
 from PyMRStrain.Filters import Hamming_filter, Riesz_filter, Tukey_filter
 from PyMRStrain.Helpers import build_idx, order
+from PyMRStrain.KSpaceTraj import Gradient
 from PyMRStrain.Math import itok, ktoi
 from PyMRStrain.MPIUtilities import MPI_print, MPI_rank
 
@@ -87,9 +89,12 @@ class EPI:
     return t
 
 
+# class SliceProfileBase:
+#   def __init__(self):
+
+
 class SliceProfile:
-  def __init__(self, z=None, z0=0.0, delta_z=0.008, gammabar=42.58, Gz=30.0, RFShape='sinc', NbLobes=2, flip_angle=np.deg2rad(15.0)):
-    self.z = z
+  def __init__(self, z0=0.0, delta_z=0.008, gammabar=42.58, Gz=30.0, RFShape='sinc', NbLeftLobes=2, NbRightLobes=2, alpha=0.46, flip_angle=np.deg2rad(15.0), NbPoints=1000, plot=True):
     self.z0 = z0
     self.delta_z = delta_z
     self.gammabar = gammabar                # [MHz/T]
@@ -97,9 +102,13 @@ class SliceProfile:
     self.Gz = Gz # dummy gradient (not really necessary to estimate the profile [yet])
     self.Gz_ = 1e-3*Gz
     self.RFShape = RFShape
-    self.NbLobes = NbLobes
+    self.NbLeftLobes = NbLeftLobes
+    self.NbRightLobes = NbRightLobes
+    self.alpha = alpha # 0.46 for Hamming and 0.5 for Hanning
     self.flip_angle = flip_angle
-    self.profile = self.calculate().astype(np.float32)
+    self.NbPoints = NbPoints
+    self.plot = plot
+    self.interp_profile = self.calculate()
 
   def calculate(self):
 
@@ -110,14 +119,17 @@ class SliceProfile:
     omega_rf = 2.0*np.pi*self.gammabar_*self.Gz_*self.z0
 
     if self.RFShape == 'sinc':
-      # Pulse duration and apodization
-      tau = (self.NbLobes+1)*2/delta_f
-      t = np.linspace(-4*tau/2, 4*tau/2, 10000)
+      # Pulse duration and time window
+      tau_l = (self.NbLeftLobes+1)*2/delta_f
+      tau_r = (self.NbRightLobes+1)*2/delta_f
+      tau = np.max([tau_l, tau_r])
+      t = np.linspace(-4*tau/2, 4*tau/2, self.NbPoints)
 
       # RF pulse definition
       dt = t[1] - t[0]
-      B1 = np.sinc(delta_f*t)*np.exp(1j*omega_rf*t)*(np.abs(t) <= tau/2)
-      B1 *= self.flip_angle/(2.0*np.pi*self.gammabar_*np.abs(B1.sum())*dt)
+      B1e = np.sinc(delta_f*t)*(t >= -tau_l/2)*(t <= tau_r/2)
+      B1  = B1e*np.exp(1j*omega_rf*t)
+      B1 *= self.flip_angle/(2.0*np.pi*self.gammabar_*B1e.sum()*dt)
 
       # Slice profile
       N = len(t)
@@ -125,33 +137,17 @@ class SliceProfile:
       k = np.linspace(0, bandwith, N) - 0.5*bandwith
       z = k/(self.gammabar_*self.Gz_)
       p = np.abs(np.fft.fftshift(np.fft.fft((B1))))
-
-      # fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-      # ax[0].plot(t, np.real(B1))
-      # ax[0].plot(t, np.imag(B1))
-      # ax[0].plot(t, np.abs(B1))
-      # ax[0].set_xlim([-tau, tau])
-      # ax[0].legend(['Real','Imag','Abs'])
-
-      # ax[1].plot(z, np.real(np.fft.fftshift(np.fft.fft((B1)))))
-      # ax[1].plot(z, np.imag(np.fft.fftshift(np.fft.fft((B1)))))
-      # ax[1].plot(z, np.abs(np.fft.fftshift(np.fft.fft((B1)))))
-      # ax[1].set_xlim([self.z0 - 2*self.delta_z, self.z0 + 2*self.delta_z])
-      # ax[1].legend(['Real','Imag','Abs'])
-      # plt.show()
-
-      # Interpolator
-      f = interp1d(z, p, kind='linear', bounds_error=False, fill_value=0.0)
 
     elif self.RFShape == 'hard':
-      # Pulse duration and apodization
+      # Pulse duration and window
       tau = 1.0/delta_f
-      t = np.linspace(-6*tau/2, 6*tau/2, 10000)
+      t = np.linspace(-6*tau/2, 6*tau/2, self.NbPoints)
 
       # RF pulse definition
       dt = t[1] - t[0]
-      B1 = np.exp(1j*omega_rf*t)*(np.abs(t) <= tau/2)
-      B1 *= self.flip_angle/(2.0*np.pi*self.gammabar_*B1.sum()*dt)
+      B1e = 1.0*(np.abs(t) <= tau/2)
+      B1  = B1e*np.exp(1j*omega_rf*t)
+      B1 *= self.flip_angle/(2.0*np.pi*self.gammabar_*B1e.sum()*dt)
 
       # Slice profile
       N = len(t)
@@ -160,21 +156,223 @@ class SliceProfile:
       z = k/(self.gammabar_*self.Gz_)
       p = np.abs(np.fft.fftshift(np.fft.fft((B1))))
 
-      # fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-      # ax[0].plot(t, np.real(B1))
-      # ax[0].plot(t, np.imag(B1))
-      # ax[0].plot(t, np.abs(B1))
-      # ax[0].set_xlim([-tau, tau])
-      # ax[0].legend(['Real','Imag','Abs'])
+    elif self.RFShape == 'apodized_sinc':
+      # Maximun number of lobes
+      N = np.max([self.NbLeftLobes, self.NbRightLobes])
 
-      # ax[1].plot(z, np.real(np.fft.fftshift(np.fft.fft((B1)))))
-      # ax[1].plot(z, np.imag(np.fft.fftshift(np.fft.fft((B1)))))
-      # ax[1].plot(z, np.abs(np.fft.fftshift(np.fft.fft((B1)))))
-      # ax[1].set_xlim([self.z0 - 4*self.delta_z, self.z0 + 4*self.delta_z])
-      # ax[1].legend(['Real','Imag','Abs'])
-      # plt.show()
+      # Pulse duration and time window
+      tau_l = (self.NbLeftLobes+1)*2/delta_f
+      tau_r = (self.NbRightLobes+1)*2/delta_f
+      tau = np.max([tau_l, tau_r])
+      t = np.linspace(-4*tau/2, 4*tau/2, self.NbPoints)
 
-      # Interpolator
-      f = interp1d(z, p, kind='linear', bounds_error=False, fill_value=0.0)
+      # RF pulse definition
+      dt = t[1] - t[0]
+      B1e = (1/delta_f)*((1-self.alpha) + self.alpha*np.cos(np.pi*delta_f*t/N))*np.sin(np.pi*delta_f*t)/(np.pi*t)*(t >= -tau_l/2)*(t <= tau_r/2)
+      B1  = B1e*np.exp(1j*omega_rf*t)
+      B1 *= self.flip_angle/(2.0*np.pi*self.gammabar_*B1e.sum()*dt)
 
-    return f(self.z)
+      # Slice profile
+      N = len(t)
+      bandwith = 1.0/(t[1] - t[0])
+      k = np.linspace(0, bandwith, N) - 0.5*bandwith
+      z = k/(self.gammabar_*self.Gz_)
+      p = np.abs(np.fft.fftshift(np.fft.fft((B1))))
+
+    if self.plot:
+      fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+      ax[0].plot(t, np.real(B1))
+      ax[0].plot(t, np.imag(B1))
+      ax[0].plot(t, np.abs(B1))
+      ax[0].set_xlim([-tau, tau])
+      ax[0].legend(['Real','Imag','Abs'])
+
+      ax[1].plot(z, np.real(np.fft.fftshift(np.fft.fft((B1)))))
+      ax[1].plot(z, np.imag(np.fft.fftshift(np.fft.fft((B1)))))
+      ax[1].plot(z, np.abs(np.fft.fftshift(np.fft.fft((B1)))))
+      ax[1].set_xlim([self.z0 - 2*self.delta_z, self.z0 + 2*self.delta_z])
+      ax[1].legend(['Real','Imag','Abs'])
+      plt.show()
+
+    # Interpolator
+    interp_profile = interp1d(z, p, kind='linear', bounds_error=False, fill_value=0.0)
+
+    return interp_profile
+
+
+class BlochSliceProfile:
+  def __init__(self, z0=0.0, delta_z=0.008, gammabar=42.58, Gz=1.0, RFShape='sinc', NbLeftLobes=2, NbRightLobes=2, alpha=0.46, flip_angle=np.deg2rad(10.0), dt=1e-4, NbPoints=150, plot=False, small_angle=False, refocusing_area_frac=0.5):
+    self.z0 = z0
+    self.delta_z = delta_z
+    self.gammabar = gammabar                # [MHz/T]
+    self.gammabar_ = 1e+6*gammabar          # [Hz/T]
+    self.Gz = Gz # dummy gradient (not really necessary to estimate the profile [yet])
+    self.Gz_ = 1.0e-3*Gz
+    self.RFShape = RFShape
+    self.NbLeftLobes = NbLeftLobes
+    self.NbRightLobes = NbRightLobes
+    self.alpha = alpha # 0.46 for Hamming and 0.5 for Hanning
+    self.flip_angle = flip_angle
+    self.NbPoints = NbPoints
+    self.plot = plot
+    self.z_rk = self.z0 # temporary assignment
+    self.dt = dt
+    self.small_angle = small_angle
+    self.refocusing_area_frac = refocusing_area_frac
+    if self.RFShape == 'sinc':
+      self.RFPulse = self._rf_sinc
+    elif self.RFShape == 'apodized_sinc':
+      self.RFPulse = self._rf_apodized_sinc
+    elif self.RFShape == 'hard':
+      self.RFPulse = self._rf_hard
+    self.interp_profile = self.calculate()
+
+  def bloch(self, t, M):
+    # Gyromagnetic constant
+    gamma = 2.0*np.pi*self.gammabar_
+
+    # Frequency offset
+    dw = gamma*1e-03*self.ss_gradient(1000.0*t)*(self.z_rk - self.z0)
+    # dw = gamma*self.Gz_*(self.z_rk - self.z0)
+
+    # Bloch equations
+    if self.small_angle:
+      dMxdt = dw*M[1]
+      dMydt = gamma*self.B1e_norm(t)*M[2] - dw*M[0]
+      dMzdt = -gamma*self.B1e_norm(t)*M[1]*0.0
+    else:
+      dMxdt = dw*M[1]
+      dMydt = gamma*self.B1e_norm(t)*M[2] - dw*M[0]
+      dMzdt = -gamma*self.B1e_norm(t)*M[1]
+
+    return np.array([dMxdt, dMydt, dMzdt]).reshape((3,))
+
+  def ss_gradient(self, t):
+    return self.g1.evaluate(t) - self.g2.evaluate(t)
+
+  def _rf_sinc(self, t):
+    # Pulse frequency needed for the desired slice thickness
+    delta_f = self.gammabar_*self.Gz_*self.delta_z
+
+    # Pulse duration and time window
+    tau_l = (self.NbLeftLobes+1)*2/delta_f
+    tau_r = (self.NbRightLobes+1)*2/delta_f
+
+    # RF pulse definition
+    B1e = np.sinc(delta_f*t)*(t >= -tau_l/2)*(t <= tau_r/2)
+
+    return B1e
+
+  def _rf_apodized_sinc(self, t):
+    # Pulse frequency needed for the desired slice thickness
+    delta_f = self.gammabar_*self.Gz_*self.delta_z
+
+    # Pulse duration and time window
+    tau_l = (self.NbLeftLobes+1)*2/delta_f
+    tau_r = (self.NbRightLobes+1)*2/delta_f
+
+    # Maximun number of lobes
+    N = np.max([self.NbLeftLobes, self.NbRightLobes])
+
+    # RF pulse definition
+    B1e = (1/delta_f)*((1-self.alpha) + self.alpha*np.cos(np.pi*delta_f*t/N))*np.sinc(delta_f*t)*(t >= -tau_l/2)*(t <= tau_r/2)
+
+    return B1e
+
+  def _rf_hard(self, t):
+    # Pulse frequency needed for the desired slice thickness
+    delta_f = self.gammabar_*self.Gz_*self.delta_z
+
+    # Pulse duration and time window
+    tau_l = (self.NbLeftLobes+1)*2/delta_f
+    tau_r = (self.NbRightLobes+1)*2/delta_f
+
+    # RF pulse definition
+    B1e = 1.0*(t >= -tau_l/2)*(t <= tau_r/2)
+
+    return B1e
+
+  def B1e_norm(self, t):
+    return self.RFPulse(t)*self.flip_angle_factor
+
+  def calculate(self, y0=np.array([0,0,1]).reshape((3,))):
+
+    # Pulse frequency needed for the desired slice thickness
+    delta_f = self.gammabar_*self.Gz_*self.delta_z
+
+    # RF pulse bounds
+    tau_l = (self.NbLeftLobes+1)*2/delta_f
+    tau_r = (self.NbRightLobes+1)*2/delta_f
+
+    # Create slice selection gradient objects
+    g1 = Gradient(G=self.Gz, slope=0.0, lenc=0.5*(tau_l + tau_r)*1000.0, t_ref=-1000*tau_l/2)
+    g2 = Gradient(G=self.Gz, slope=0.0, t_ref=g1.timings[-1])
+    # g2.calculate_area(0.5*g1.G_*g1.lenc_ + 0.5*g1.G_*g1.slope_)
+    g2.calculate_area(self.refocusing_area_frac*(g1.G_*g1.lenc_ + g1.G_*g1.slope_))
+
+    # Fix timings
+    g1.t_ref -= g1.slope
+    g1.timings, g1.amplitudes, _ = g1.group_timings()
+    g2.t_ref -= g1.slope
+    g2.timings, g2.amplitudes, _ = g2.group_timings()
+    self.g1 = g1
+    self.g2 = g2
+
+    # Integration bounds
+    t0 = g1.timings[0]/1000.0
+    t_bound = g2.timings[-1]/1000.0   
+
+    # Calculate factor to accoundt for flip angle
+    t = np.linspace(t0, t_bound, int((t_bound - t0)/self.dt))
+    self.flip_angle_factor = self.flip_angle/(2.0*np.pi*self.gammabar_*self.RFPulse(t).sum()*self.dt)
+
+    # Slice positions
+    z_min = self.z0 - 2*self.delta_z
+    z_max = self.z0 + 2*self.delta_z
+
+    z_arr = np.linspace(z_min, z_max, self.NbPoints)
+    M = np.zeros([3, len(z_arr)])
+    for (i, z) in enumerate(z_arr):
+
+      # Solve
+      self.z_rk = z
+      solver = RK45(self.bloch, t0, y0, t_bound, vectorized=True, first_step=self.dt, max_step=100.0*self.dt)
+
+      # collect data
+      t  = []
+      B1 = []
+      while solver.status not in ['finished','failed']:
+        # get solution step state
+        solver.step()
+        t.append(solver.t)
+        B1.append(self.B1e_norm(t[-1]))
+
+      t  = np.array(t)
+      B1 = np.array(B1)
+      M[:,i] = solver.y
+
+    if self.plot:
+      fig, ax = plt.subplots(1, 3, figsize=(12, 4))
+      ax[0].plot(t, B1)
+      ax[0].legend(['B1'])
+      axt = ax[0].twinx()
+      axt.plot(g1.timings/1000, g1.amplitudes)
+      axt.plot(g2.timings/1000, -g2.amplitudes)
+      axt.set_xlim([t0, t_bound])
+      axt.legend(['g1','g2'])
+
+      ax[1].plot(z_arr, M[0,:])
+      ax[1].plot(z_arr, M[1,:])
+      ax[1].plot(z_arr, np.abs(M[0,:] + 1j*M[1,:]))
+      ax[1].legend(['Mx','My','Mxy'])
+
+      ax[2].plot(z_arr, M[2,:])
+      ax[2].legend(['Mz'])
+      plt.tight_layout()
+      plt.show()
+
+    # Interpolator
+    p = np.abs(M[0,:] + 1j*M[1,:])
+    interp_profile = interp1d(z_arr, p, kind='linear', bounds_error=False, fill_value=0.0)
+
+    return interp_profile

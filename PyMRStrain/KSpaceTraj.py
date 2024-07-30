@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.interpolate import interp1d
 
 from PyMRStrain.Math import divide_no_nan
 from PyMRStrain.MPIUtilities import scatterKspace
@@ -9,21 +10,30 @@ from PyMRStrain.MPIUtilities import scatterKspace
 # Gradient
 class Gradient:
   def __init__(self, slope=1.0, lenc=1.0, G=1.0, Gr_max=30.0, Gr_sr=195.0, gammabar=42.58, t_ref=0.0):
-    self.slope = slope   # [ms]
-    self.lenc = lenc     # [ms]
-    self.G = G           # [mT/m]
-    self.slope_ = 1.0e-3*slope   # [s]
-    self.lenc_ = 1.0e-3*lenc     # [s]
+    if G == 0.0:
+      self.G = Gr_max      # [mT/m]
+    else:
+      self.G = G           # [mT/m]
     self.G_ = 1.0e-3*G           # [T/m]
+    self.lenc = lenc     # [ms]
+    self.lenc_ = 1.0e-3*lenc     # [s]
     self.Gr_max = Gr_max         # [mT/m]
     self.Gr_max_ = 1.0e-3*Gr_max # [T/m]
     self.Gr_sr = Gr_sr     # [mT/(m*ms)]
     self.Gr_sr_ = Gr_sr    # [T/(m*s)]
+    if slope == 0.0:
+      self.slope = np.abs(self.G)/self.Gr_sr # [ms]
+    else:
+      self.slope = slope   # [ms]
+    self.slope_ = 1.0e-3*self.slope        # [s]
     self.gammabar = gammabar               # [MHz/T]
     self.gammabar_ = 1.0e+6*gammabar       # [Hz/T]
     self.gamma_ = 2.0*np.pi*1e+6*gammabar  # [rad/T]
-    self.t_ref = t_ref
-    self.timings, self.amplitudes = self.group_timings()
+    self.t_ref = t_ref                     # [ms]
+    self.timings, self.amplitudes, self.interpolator = self.group_timings()
+
+  def evaluate(self, t):
+    return self.interpolator(t)
 
   def __add__(self, g):
     # Concatenate gradients
@@ -50,7 +60,10 @@ class Gradient:
     # Add reference time
     timings += self.t_ref
 
-    return timings, amplitudes
+    # Define interpolator for gradient evaluation
+    interp = interp1d(timings, amplitudes, kind='linear', fill_value=0.0, bounds_error=False)
+
+    return timings, amplitudes, interp
 
   def calculate(self, bw_hz, receiver_bw=None, ro_samples=None, ofac=None):
     ''' Calculate gradient based on target area 
@@ -105,7 +118,7 @@ class Gradient:
     self.dur = 1.0e+3*self.dur_ # [s]
 
     # Update timings and amplitudes in array
-    self.timings, self.amplitudes = self.group_timings()
+    self.timings, self.amplitudes, self.interpolator = self.group_timings()
 
   def calculate_bipolar(self, VENC):
     ''' Calculate the time needed to apply the velocity encoding gradients
@@ -158,10 +171,52 @@ class Gradient:
     self.dur = 1.0e+3*self.dur_ # [ms]
 
     # Update timings and amplitudes in array
-    timings, amplitudes = self.group_timings()  
+    timings, amplitudes, _ = self.group_timings()  
     self.timings = np.concatenate((timings, timings[-1] + timings))
     self.amplitudes = np.concatenate((amplitudes, -amplitudes))
 
+    # Re-define interpolator
+    self.interpolator = interp1d(self.timings, self.amplitudes, kind='linear', fill_value=0.0, bounds_error=False)
+
+  def calculate_area(self, area):
+    ''' Calculate the time needed to apply the velocity encoding gradients
+    based on the values of Gr_max and Gr_sr'''
+
+    # Gradient area without rectangle part
+    # If lenc = 0, area = G*slope
+    slope_ = self.Gr_max_/self.Gr_sr_ # [s]
+    slope_req_ = area/self.G_
+
+    # Check if rectangle parts of the gradient are needed
+    if slope_req_ <= slope_:
+      # Set gradient duration
+      self.slope_ = slope_req_                # [s]
+      self.G_     = self.Gr_sr_*slope_req_    # [s]
+      self.lenc_  = self.slope_ - slope_req_  # [s]
+    else:
+      # Lobe area (only ramps)
+      area_ramps = slope_*self.Gr_max_
+
+      # Estimate remaining area 
+      # If lenc != 0:
+      #     area = area_ramps + Gmax*lenc
+      # Gradients parameters
+      self.slope_ = slope_
+      self.G_     = self.Gr_max_
+      self.lenc_  = (area - area_ramps)/self.Gr_max_
+
+    # Store variables in mT - ms
+    self.lenc  = 1.0e+3*self.lenc_    # [ms]
+    self.G     = 1.0e+3*self.G_       # [mT/m]
+    self.slope = 1.0e+3*self.slope_   # [ms]
+    if self.lenc < 0:
+      self.dur_ = 2*self.slope_ # [s]
+    else:
+      self.dur_ = 2*self.slope_ + self.lenc_ # [s]
+    self.dur = 1.0e+3*self.dur_ # [ms]
+
+    # Update timings and amplitudes in array
+    self.timings, self.amplitudes, self.interpolator = self.group_timings()
 
   def plot(self, linestyle='-', axes=[]):
     ''' Plot gradient '''

@@ -11,8 +11,8 @@ from PyMRStrain.FlowToImage import FlowImage3D
 from PyMRStrain.IO import scale_data
 from PyMRStrain.KSpaceTraj import Cartesian
 from PyMRStrain.Math import Rx, Ry, Rz, itok, ktoi
-from PyMRStrain.MPIUtilities import MPI_comm, MPI_rank, gather_image
-from PyMRStrain.MRImaging import SliceProfile
+from PyMRStrain.MPIUtilities import MPI_comm, MPI_print, MPI_rank, gather_image
+from PyMRStrain.MRImaging import BlochSliceProfile, SliceProfile
 from PyMRStrain.Phantom import FEMPhantom
 
 if __name__ == '__main__':
@@ -57,10 +57,10 @@ if __name__ == '__main__':
 
   # Field inhomogeneity
   x =  phantom.mesh['nodes']
-  gammabar = 1.0e+6*42.58 # Hz/T 
+  gammabar = 1.0e+6*42.58 # Hz/T
   delta_B0 = x[:,0] + x[:,1] + x[:,2]  # spatial distribution
   delta_B0 /= np.abs(delta_B0).max()  # normalization
-  delta_B0 *= 1.5*1e-6  # scaling (1 ppm of 1.5T)        
+  delta_B0 *= 1.5*1e-6  # scaling (1 ppm of 1.5T)
   delta_B0 *= 0.0  # additional scaling (just for testing)
   gamma_x_delta_B0 = 2*np.pi*gammabar*delta_B0
 
@@ -78,10 +78,13 @@ if __name__ == '__main__':
   nodes = (phantom.mesh['nodes'] - traj.LOC)@traj.MPS_ori
 
   # Slice profile
-  profile = SliceProfile(z=nodes[:,2], delta_z=FOV[2], NbLobes=4, flip_angle=np.deg2rad(15), RFShape='sinc').profile
+  # sp = SliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(15), NbLeftLobes=8, NbRightLobes=8, RFShape='apodized_sinc', NbPoints=1000, alpha=0.5)
+  # profile = sp.interp_profile(nodes[:,2])
+  sp = BlochSliceProfile(delta_z=0.12, flip_angle=np.deg2rad(10), NbLeftLobes=4, NbRightLobes=4, RFShape='apodized_sinc', NbPoints=100, dt=1e-4, alpha=0.46, plot=True, Gz=1.5, small_angle=False, refocusing_area_frac=0.522)
+  profile = sp.interp_profile(nodes[:,2])
 
   # Print echo time
-  if MPI_rank==0: print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
+  MPI_print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
 
   # kspace array
   ro_samples = traj.ro_samples
@@ -100,7 +103,7 @@ if __name__ == '__main__':
     velocity = phantom.velocity@traj.MPS_ori
 
     # Generate 4D flow image
-    if MPI_rank == 0: print('Generating frame {:d}'.format(fr))
+    MPI_print('Generating frame {:d}'.format(fr))
     t0 = time.time()
     K[traj.local_idx,:,:,:,fr] = FlowImage3D(MPI_rank, M, traj.local_points, traj.local_times, velocity, nodes, gamma_x_delta_B0, T2star, VENC, profile)
     t1 = time.time()
@@ -115,11 +118,11 @@ if __name__ == '__main__':
           pickle.dump({'kspace': K_copy, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
 
     # Synchronize MPI processes
-    print(np.array(times).mean())
+    MPI_print(np.array(times).mean())
     MPI_comm.Barrier()
 
   # Show mean time that takes to generate each 3D volume
-  print(np.array(times).mean())
+  MPI_print(np.array(times).mean())
 
   # Gather results
   K = gather_image(K)
