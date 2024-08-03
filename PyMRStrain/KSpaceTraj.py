@@ -179,31 +179,42 @@ class Gradient:
     self.interpolator = interp1d(self.timings, self.amplitudes, kind='linear', fill_value=0.0, bounds_error=False)
 
   def calculate_area(self, area):
-    ''' Calculate the time needed to apply the velocity encoding gradients
-    based on the values of Gr_max and Gr_sr'''
+    # # Gradient area without rectangle part
+    # current_area = self.G_*self.slope_
 
-    # Gradient area without rectangle part
-    # If lenc = 0, area = G*slope
-    slope_ = self.Gr_max_/self.Gr_sr_ # [s]
-    slope_req_ = area/self.G_
+    # if current_area < area:
+    #   # Add required rectangle area
+    #   req_area = area - current_area
+    #   self.lenc_ = req_area/self.G_
+    # # else:
+    # #   # Remove remaining triangle area
+    # #   self.G_ = area/self.slope
+    # #   slope_req_ = area/self.G_
+
+    # Minimun slope posible to achieve tha maximun gradient amplitude
+    slope_min_ = self.Gr_max_/self.Gr_sr_ # [s]
+
+    # Gradient area using maximun amplitude and slewrate (if lenc = 0, area = G*slope)
+    area_max_ = slope_min_*self.Gr_max_
 
     # Check if rectangle parts of the gradient are needed
-    if slope_req_ <= slope_:
-      # Set gradient duration
-      self.slope_ = slope_req_                # [s]
-      self.G_     = self.Gr_sr_*slope_req_    # [s]
-      self.lenc_  = self.slope_ - slope_req_  # [s]
+    if area <= area_max_:
+      # Calculate needed gradient amplitude
+      ratio = area/area_max_
+      self.slope_ = slope_min_*np.sqrt(ratio)
+      self.G_     = self.Gr_max_*np.sqrt(ratio)
+      self.lenc_  = self.slope_ - slope_min_*np.sqrt(ratio) 
     else:
-      # Lobe area (only ramps)
-      area_ramps = slope_*self.Gr_max_
+      # Calculate missing area needed
+      area_needed = area - area_max_
 
       # Estimate remaining area 
       # If lenc != 0:
       #     area = area_ramps + Gmax*lenc
       # Gradients parameters
-      self.slope_ = slope_
+      self.slope_ = slope_min_
       self.G_     = self.Gr_max_
-      self.lenc_  = (area - area_ramps)/self.Gr_max_
+      self.lenc_  = area_needed/self.Gr_max_
 
     # Store variables in mT - ms
     self.lenc  = 1.0e+3*self.lenc_    # [ms]

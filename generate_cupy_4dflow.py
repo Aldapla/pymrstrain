@@ -26,7 +26,7 @@ if __name__ == '__main__':
   preview = True
 
   # Import imaging parameters
-  with open('PARAMETERS_test.yaml') as file:
+  with open('PARAMETERS.yaml') as file:
     pars = yaml.load(file, Loader=yaml.FullLoader)
 
   # Imaging parameters
@@ -90,9 +90,9 @@ if __name__ == '__main__':
   cp_nodes = (cp_nodes - LOC)@MPS_ori
 
   # Slice profile
-  # sp = SliceProfile(z=cp_nodes[:,2].get(), delta_z=FOV[2], flip_angle=np.deg2rad(15), NbLeftLobes=3, NbRightLobes=3, RFShape='sinc')
-  # profile = cp.asarray(np.tile(sp.profile[:, np.newaxis], (1, 3)), dtype=cp.float32)
-  sp = BlochSliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(10), NbLeftLobes=4, NbRightLobes=4, RFShape='apodized_sinc', NbPoints=150, dt=1e-4, alpha=0.46, plot=True, Gz=10.0)
+  sp = SliceProfile(z=cp_nodes[:,2].get(), delta_z=FOV[2], flip_angle=np.deg2rad(15), NbLeftLobes=3, NbRightLobes=3, RFShape='sinc')
+  profile = cp.asarray(np.tile(sp.profile[:, np.newaxis], (1, 3)), dtype=cp.float32)
+  sp = BlochSliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(8), NbLeftLobes=4, NbRightLobes=4, RFShape='apodized_sinc', NbPoints=150, dt=1e-5, alpha=0.46, plot=True, Gz=2.5, refocusing_area_frac=0.545)
   profile = cp.asarray(np.tile(sp.interp_profile(cp_nodes[:,2].get())[:, np.newaxis], (1, 3)), dtype=cp.complex64)
 
   # Print echo time

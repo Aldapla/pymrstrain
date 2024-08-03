@@ -80,54 +80,54 @@ if __name__ == '__main__':
   # Slice profile
   # sp = SliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(15), NbLeftLobes=8, NbRightLobes=8, RFShape='apodized_sinc', NbPoints=1000, alpha=0.5)
   # profile = sp.interp_profile(nodes[:,2])
-  sp = BlochSliceProfile(delta_z=0.12, flip_angle=np.deg2rad(10), NbLeftLobes=4, NbRightLobes=4, RFShape='apodized_sinc', NbPoints=100, dt=1e-4, alpha=0.46, plot=True, Gz=1.5, small_angle=False, refocusing_area_frac=0.522)
+  sp = BlochSliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(10), NbLeftLobes=4, NbRightLobes=4, RFShape='sinc', NbPoints=100, dt=1e-5, alpha=0.46, plot=True, Gz=15, small_angle=False, refocusing_area_frac=0.5)
   profile = sp.interp_profile(nodes[:,2])
 
-  # Print echo time
-  MPI_print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
+  # # Print echo time
+  # MPI_print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
 
-  # kspace array
-  ro_samples = traj.ro_samples
-  ph_samples = traj.ph_samples
-  slices = traj.slices
-  K = np.zeros([ro_samples, ph_samples, slices, 3, phantom.Nfr], dtype=np.complex64)
+  # # kspace array
+  # ro_samples = traj.ro_samples
+  # ph_samples = traj.ph_samples
+  # slices = traj.slices
+  # K = np.zeros([ro_samples, ph_samples, slices, 3, phantom.Nfr], dtype=np.complex64)
 
-  # List to store how much is taking to generate one volume
-  times = []
+  # # List to store how much is taking to generate one volume
+  # times = []
 
-  # Iterate over cardiac phases
-  for fr in range(phantom.Nfr):
+  # # Iterate over cardiac phases
+  # for fr in range(phantom.Nfr):
 
-    # Read velocity data in frame fr
-    phantom.read_data(fr)
-    velocity = phantom.velocity@traj.MPS_ori
+  #   # Read velocity data in frame fr
+  #   phantom.read_data(fr)
+  #   velocity = phantom.velocity@traj.MPS_ori
 
-    # Generate 4D flow image
-    MPI_print('Generating frame {:d}'.format(fr))
-    t0 = time.time()
-    K[traj.local_idx,:,:,:,fr] = FlowImage3D(MPI_rank, M, traj.local_points, traj.local_times, velocity, nodes, gamma_x_delta_B0, T2star, VENC, profile)
-    t1 = time.time()
-    times.append(t1-t0)
+  #   # Generate 4D flow image
+  #   MPI_print('Generating frame {:d}'.format(fr))
+  #   t0 = time.time()
+  #   K[traj.local_idx,:,:,:,fr] = FlowImage3D(MPI_rank, M, traj.local_points, traj.local_times, velocity, nodes, gamma_x_delta_B0, T2star, VENC, profile)
+  #   t1 = time.time()
+  #   times.append(t1-t0)
 
-    # Save kspace for debugging purposes
-    if preview:
-      K_copy = np.copy(K)
-      K_copy = gather_image(K_copy)
-      if MPI_rank==0:
-        with open(str(export_path), 'wb') as f:
-          pickle.dump({'kspace': K_copy, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
+  #   # Save kspace for debugging purposes
+  #   if preview:
+  #     K_copy = np.copy(K)
+  #     K_copy = gather_image(K_copy)
+  #     if MPI_rank==0:
+  #       with open(str(export_path), 'wb') as f:
+  #         pickle.dump({'kspace': K_copy, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
 
-    # Synchronize MPI processes
-    MPI_print(np.array(times).mean())
-    MPI_comm.Barrier()
+  #   # Synchronize MPI processes
+  #   MPI_print(np.array(times).mean())
+  #   MPI_comm.Barrier()
 
-  # Show mean time that takes to generate each 3D volume
-  MPI_print(np.array(times).mean())
+  # # Show mean time that takes to generate each 3D volume
+  # MPI_print(np.array(times).mean())
 
-  # Gather results
-  K = gather_image(K)
+  # # Gather results
+  # K = gather_image(K)
 
-  # Export generated data
-  if MPI_rank==0:
-    with open(str(export_path), 'wb') as f:
-      pickle.dump({'kspace': K, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)
+  # # Export generated data
+  # if MPI_rank==0:
+  #   with open(str(export_path), 'wb') as f:
+  #     pickle.dump({'kspace': K, 'MPS_ori': MPS_ori, 'LOC': LOC, 'traj': traj}, f)

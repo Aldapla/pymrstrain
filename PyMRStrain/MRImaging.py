@@ -306,8 +306,8 @@ class BlochSliceProfile:
 
     # Create slice selection gradient objects
     g1 = Gradient(G=self.Gz, slope=0.0, lenc=0.5*(tau_l + tau_r)*1000.0, t_ref=-1000*tau_l/2)
-    g2 = Gradient(G=self.Gz, slope=0.0, t_ref=g1.timings[-1])
-    # g2.calculate_area(0.5*g1.G_*g1.lenc_ + 0.5*g1.G_*g1.slope_)
+    g2 = Gradient(G=self.Gz, slope=g1.slope, t_ref=g1.timings[-1])
+    # g2 = Gradient(t_ref=g1.timings[-1])
     g2.calculate_area(self.refocusing_area_frac*(g1.G_*g1.lenc_ + g1.G_*g1.slope_))
 
     # Fix timings
@@ -320,7 +320,7 @@ class BlochSliceProfile:
 
     # Integration bounds
     t0 = g1.timings[0]/1000.0
-    t_bound = g2.timings[-1]/1000.0   
+    t_bound = g2.timings[-1]/1000.0
 
     # Calculate factor to accoundt for flip angle
     t = np.linspace(t0, t_bound, int((t_bound - t0)/self.dt))
@@ -336,38 +336,39 @@ class BlochSliceProfile:
 
       # Solve
       self.z_rk = z
-      solver = RK45(self.bloch, t0, y0, t_bound, vectorized=True, first_step=self.dt, max_step=100.0*self.dt)
+      solver = RK45(self.bloch, t0, y0, t_bound, vectorized=True, first_step=self.dt, max_step=100*self.dt)
 
       # collect data
-      t  = []
-      B1 = []
+      t  = [t0,]
+      B1 = [self.B1e_norm(t0),]
       while solver.status not in ['finished','failed']:
         # get solution step state
         solver.step()
         t.append(solver.t)
         B1.append(self.B1e_norm(t[-1]))
 
-      t  = np.array(t)
-      B1 = np.array(B1)
       M[:,i] = solver.y
+    t  = np.array(t)
+    B1 = np.array(B1)
+    print(t)
 
     if self.plot:
-      fig, ax = plt.subplots(1, 3, figsize=(12, 4))
+      fig, ax = plt.subplots(2, 1, figsize=(12, 4))
       ax[0].plot(t, B1)
+      ax[0].set_xlim([t0, t_bound])
       ax[0].legend(['B1'])
-      axt = ax[0].twinx()
-      axt.plot(g1.timings/1000, g1.amplitudes)
-      axt.plot(g2.timings/1000, -g2.amplitudes)
-      axt.set_xlim([t0, t_bound])
-      axt.legend(['g1','g2'])
+      ax[1].plot(g1.timings/1000, g1.amplitudes)
+      ax[1].plot(g2.timings/1000, -g2.amplitudes)
+      ax[1].set_xlim([t0, t_bound])
+      ax[1].legend(['Dephasing gr.','Rephasing gr.'])
 
-      ax[1].plot(z_arr, M[0,:])
-      ax[1].plot(z_arr, M[1,:])
-      ax[1].plot(z_arr, np.abs(M[0,:] + 1j*M[1,:]))
-      ax[1].legend(['Mx','My','Mxy'])
-
-      ax[2].plot(z_arr, M[2,:])
-      ax[2].legend(['Mz'])
+      fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+      ax[0].plot(z_arr, M[0,:])
+      ax[0].plot(z_arr, M[1,:])
+      ax[0].plot(z_arr, np.abs(M[0,:] + 1j*M[1,:]))
+      ax[0].legend(['Mx','My','Mxy'])
+      ax[1].plot(z_arr, M[2,:])
+      ax[1].legend(['Mz'])
       plt.tight_layout()
       plt.show()
 
