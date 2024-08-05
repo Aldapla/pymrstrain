@@ -111,63 +111,63 @@ if __name__ == '__main__':
   print("Image shape after correcting oversampling: ",I.shape)
 
   # Plot image using matplotlib plotter
-  plotter = MRIPlotter(images=[np.abs(I[...,2,:]), np.angle(I[...,2,:])])
+  plotter = MRIPlotter(images=[np.abs(I[...,0,:]), np.angle(I[...,0,:]), np.angle(I[...,1,:]), np.angle(I[...,2,:])], FOV=FOV, title=['Magnitude', '$\phi_0$', '$\phi_1$', '$\phi_2$'])
   plotter.show()
 
-  # Origin and pixel spacing of the generated image
-  # spacing = (data['traj'].pxsz).tolist()
-  spacing = (data['traj'].FOV/data['traj'].res).tolist()
-  origin  = (MPS_ori@(-0.5*data['traj'].FOV) + LOC).tolist()
+  # # Origin and pixel spacing of the generated image
+  # # spacing = (data['traj'].pxsz).tolist()
+  # spacing = (data['traj'].FOV/data['traj'].res).tolist()
+  # origin  = (MPS_ori@(-0.5*data['traj'].FOV) + LOC).tolist()
+
+
+  # # #########################################################
+  # # #   Export images to vti
+  # # #########################################################
+
+  # # Create VTIFile
+  # vti_file = im_file.parents[0]/('vti/' + im_file.stem + '.pvd')
+  # file = VTIFile(filename=str(vti_file), origin=origin, spacing=spacing, direction=MPS_ori.flatten().tolist(), nbFrames=K.shape[-1])
+
+  # # Get velocity and magnitude
+  # v_factor = (VENC/100.0)*(1/np.pi)
+  # vx = v_factor*np.angle(I[...,0,:]).copy()
+  # vy = v_factor*np.angle(I[...,1,:]).copy()
+  # vz = v_factor*np.angle(I[...,2,:]).copy()
+  # mx = np.abs(I[...,0,:]).copy()
+  # my = np.abs(I[...,1,:]).copy()
+  # mz = np.abs(I[...,2,:]).copy()
+
+  # # Estimate angiographic image
+  # velocity_magnitude = np.sqrt(vx**2 + vy**2 + vz**2)
+  # angio = ( (mx + my + mz)/3 )*velocity_magnitude/K.shape[-1]
+
+  # # Write VTI
+  # file.write(cellData={'velocity_x': vx, 'velocity_y': vy, 'velocity_z': vz, 'angiography': angio, 'magnitude': mx})
 
 
   # #########################################################
-  # #   Export images to vti
+  # #   Export scaled phantom to xdmf
   # #########################################################
+  # # Create phantom object
+  # sim_file = Path('phantoms/aorta_CFD.xdmf')
+  # phantom = FEMPhantom(path=str(sim_file), scale_factor=0.01)
 
-  # Create VTIFile
-  vti_file = im_file.parents[0]/('vti/' + im_file.stem + '.pvd')
-  file = VTIFile(filename=str(vti_file), origin=origin, spacing=spacing, direction=MPS_ori.flatten().tolist(), nbFrames=K.shape[-1])
+  # # Create XDMFFile to export scaled data
+  # xdmf_file = im_file.parents[0]/'xdmf/aorta_CFD.xdmf'
+  # file = XDMFFile(filename=str(xdmf_file), nodes=phantom.mesh['nodes'], elements=phantom.mesh['all_elems'])
 
-  # Get velocity and magnitude
-  v_factor = (VENC/100.0)*(1/np.pi)
-  vx = v_factor*np.angle(I[...,0,:]).copy()
-  vy = v_factor*np.angle(I[...,1,:]).copy()
-  vz = v_factor*np.angle(I[...,2,:]).copy()
-  mx = np.abs(I[...,0,:]).copy()
-  my = np.abs(I[...,1,:]).copy()
-  mz = np.abs(I[...,2,:]).copy()
+  # # Write data
+  # for fr in range(phantom.Nfr):
 
-  # Estimate angiographic image
-  velocity_magnitude = np.sqrt(vx**2 + vy**2 + vz**2)
-  angio = ( (mx + my + mz)/3 )*velocity_magnitude/K.shape[-1]
+  #   # Read velocity at current timestep
+  #   phantom.read_data(fr)
 
-  # Write VTI
-  file.write(cellData={'velocity_x': vx, 'velocity_y': vy, 'velocity_z': vz, 'angiography': angio, 'magnitude': mx})
+  #   # Get information from phantom
+  #   velocity = phantom.velocity
 
+  #   # Export data in the registered frame
+  #   # file.write(cellData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr*dt)
+  #   file.write(pointData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr)
 
-  #########################################################
-  #   Export scaled phantom to xdmf
-  #########################################################
-  # Create phantom object
-  sim_file = Path('phantoms/aorta_CFD.xdmf')
-  phantom = FEMPhantom(path=str(sim_file), scale_factor=0.01)
-
-  # Create XDMFFile to export scaled data
-  xdmf_file = im_file.parents[0]/'xdmf/aorta_CFD.xdmf'
-  file = XDMFFile(filename=str(xdmf_file), nodes=phantom.mesh['nodes'], elements=phantom.mesh['all_elems'])
-
-  # Write data
-  for fr in range(phantom.Nfr):
-
-    # Read velocity at current timestep
-    phantom.read_data(fr)
-
-    # Get information from phantom
-    velocity = phantom.velocity
-
-    # Export data in the registered frame
-    # file.write(cellData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr*dt)
-    file.write(pointData={"velocity": phantom.velocity, "pressure": phantom.pressure}, time=fr)
-
-  # Close XDMFFile
-  file.close()
+  # # Close XDMFFile
+  # file.close()

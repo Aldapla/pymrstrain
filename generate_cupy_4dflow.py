@@ -8,7 +8,7 @@ import numpy as np
 import yaml
 from cupyx.scipy.sparse import csr_matrix as cp_csr_matrix
 
-from PyMRStrain.Fem import massAssemble
+from PyMRStrain.FiniteElements import massAssemble
 from PyMRStrain.IO import scale_data
 from PyMRStrain.KSpaceTraj import Cartesian
 from PyMRStrain.Math import Rx, Ry, Rz, itok, ktoi
@@ -90,52 +90,54 @@ if __name__ == '__main__':
   cp_nodes = (cp_nodes - LOC)@MPS_ori
 
   # Slice profile
-  sp = SliceProfile(z=cp_nodes[:,2].get(), delta_z=FOV[2], flip_angle=np.deg2rad(15), NbLeftLobes=3, NbRightLobes=3, RFShape='sinc')
-  profile = cp.asarray(np.tile(sp.profile[:, np.newaxis], (1, 3)), dtype=cp.float32)
-  sp = BlochSliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(8), NbLeftLobes=4, NbRightLobes=4, RFShape='apodized_sinc', NbPoints=150, dt=1e-5, alpha=0.46, plot=True, Gz=2.5, refocusing_area_frac=0.545)
+  # # sp = SliceProfile(z=cp_nodes[:,2].get(), delta_z=FOV[2], flip_angle=np.deg2rad(15), NbLeftLobes=3, NbRightLobes=3, RFShape='sinc')
+  # # profile = cp.asarray(np.tile(sp.profile[:, np.newaxis], (1, 3)), dtype=cp.float32)
+  # sp = BlochSliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(30), NbLeftLobes=4, NbRightLobes=4, RFShape='apodized_sinc', NbPoints=150, dt=1e-5, alpha=0.46, plot=True, Gz=10, refocusing_area_frac=0.545)
+  # profile = cp.asarray(np.tile(sp.interp_profile(cp_nodes[:,2].get())[:, np.newaxis], (1, 3)), dtype=cp.complex64)
+  sp = BlochSliceProfile(delta_z=FOV[2], flip_angle=np.deg2rad(30), NbLeftLobes=4, NbRightLobes=4, RFShape='apodized_sinc', NbPoints=150, dt=1e-5, alpha=0.46, plot=True, Gz=10, refocusing_area_frac=0.545)
   profile = cp.asarray(np.tile(sp.interp_profile(cp_nodes[:,2].get())[:, np.newaxis], (1, 3)), dtype=cp.complex64)
 
-  # Print echo time
-  print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
+  # # Print echo time
+  # print('Echo time = {:.1f} ms'.format(1000.0*traj.echo_time))
 
-  # kspace array
-  ro_samples = traj.ro_samples
-  ph_samples = traj.ph_samples
-  slices = traj.slices
-  K = cp.zeros([ro_samples, ph_samples, slices, 3, phantom.Nfr], dtype=cp.complex64)
+  # # kspace array
+  # ro_samples = traj.ro_samples
+  # ph_samples = traj.ph_samples
+  # slices = traj.slices
+  # K = cp.zeros([ro_samples, ph_samples, slices, 3, phantom.Nfr], dtype=cp.complex64)
 
-  # List to store how much is taking to generate one volume
-  times = []
+  # # List to store how much is taking to generate one volume
+  # times = []
 
-  # Iterate over cardiac phases
-  for fr in range(phantom.Nfr):
+  # # Iterate over cardiac phases
+  # for fr in range(phantom.Nfr):
 
-    # Read velocity data in frame fr
-    phantom.read_data(fr)
-    cp_velocity = cp.asarray(phantom.velocity, dtype=cp.float32)
-    velocity = cp_velocity@MPS_ori
+  #   # Read velocity data in frame fr
+  #   phantom.read_data(fr)
+  #   cp_velocity = cp.asarray(phantom.velocity, dtype=cp.float32)
+  #   velocity = cp_velocity@MPS_ori
 
-    # Generate 4D flow image
-    print('Generating frame {:d}'.format(fr))
-    t0 = time.time()
-    K[traj.local_idx,:,:,:,fr] = FlowImage3D(M, cp_traj_points, cp_traj_times, cp_velocity, cp_nodes, gamma_x_delta_B0, T2star, VENC, profile)
-    t1 = time.time()
-    times.append(t1-t0)
+  #   # Generate 4D flow image
+  #   print('Generating frame {:d}'.format(fr))
+  #   t0 = time.time()
+  #   K[traj.local_idx,:,:,:,fr] = FlowImage3D(M, cp_traj_points, cp_traj_times, cp_velocity, cp_nodes, gamma_x_delta_B0, T2star, VENC, profile)
+  #   t1 = time.time()
+  #   times.append(t1-t0)
 
-    # Save kspace for debugging purposes
-    if preview:
-      with open(str(export_path), 'wb') as f:
-        pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC), 'traj': traj}, f)
+  #   # Save kspace for debugging purposes
+  #   if preview:
+  #     with open(str(export_path), 'wb') as f:
+  #       pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC), 'traj': traj}, f)
 
-    # Synchronize MPI processes
-    print(np.array(times).mean())
+  #   # Synchronize MPI processes
+  #   print(np.array(times).mean())
 
-  # Show mean time that takes to generate each 3D volume
-  print(np.array(times).mean())
+  # # Show mean time that takes to generate each 3D volume
+  # print(np.array(times).mean())
 
-  # Export generated data
-  # K_scaled = scale_data(K, mag=False, real=True, imag=True, dtype=np.uint64)
-  with open(str(export_path), 'wb') as f:
-    pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC), 'traj': traj}, f)
+  # # Export generated data
+  # # K_scaled = scale_data(K, mag=False, real=True, imag=True, dtype=np.uint64)
+  # with open(str(export_path), 'wb') as f:
+  #   pickle.dump({'kspace': cp.asnumpy(K), 'MPS_ori': cp.asnumpy(MPS_ori), 'LOC': cp.asnumpy(LOC), 'traj': traj}, f)
 
-  stream.synchronize()
+  # stream.synchronize()

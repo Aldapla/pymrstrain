@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from PyMRStrain.Fem import massAssemble
+from PyMRStrain.FiniteElements import massAssemble
 from PyMRStrain.FlowToImage import FlowImage3D
 from PyMRStrain.IO import scale_data
 from PyMRStrain.KSpaceTraj import Cartesian
