@@ -304,7 +304,7 @@ VectorXd massAssembleInt(const MatrixXi &elems,
 }
 
 
-PYBIND11_MODULE(Fem, m) {
+PYBIND11_MODULE(FiniteElements, m) {
     m.doc() = "Finite elements functions"; // optional module docstring
     m.def("assemble", &assemble, py::return_value_policy::reference);
     m.def("massAssemble", &massAssemble, py::return_value_policy::reference);
